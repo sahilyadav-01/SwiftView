@@ -1,0 +1,16 @@
+{
+  "name": "swiftview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A low-latency remote desktop client prototype",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}

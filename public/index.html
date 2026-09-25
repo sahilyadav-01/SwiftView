@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#090b10">
+  <title>SwiftView — Remote desktop, reimagined</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="SwiftView home">
+        <span class="brand-mark"><i></i><i></i></span>
+        <span>SwiftView</span>
+      </a>
+
+      <nav aria-label="Primary navigation">
+        <button class="nav-item active" data-view="remote"><span class="icon">⌁</span> Remote access</button>
+        <button class="nav-item" data-view="devices"><span class="icon">▣</span> My devices <b>3</b></button>
+        <button class="nav-item" data-view="activity"><span class="icon">↗</span> Activity</button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="secure-note"><span>◆</span><div><strong>End-to-end encrypted</strong><small>Your sessions stay private.</small></div></div>
+        <button class="nav-item"><span class="icon">?</span> Help & support</button>
+        <button class="profile">
+          <span class="avatar">SY</span>
+          <span><strong>Sahil Yadav</strong><small>Personal workspace</small></span>
+          <span class="more">•••</span>
+        </button>
+      </div>
+    </aside>
+
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">REMOTE ACCESS</p>
+          <h1>Good evening, Sahil.</h1>
+          <p class="subtitle">Connect to any device, from anywhere.</p>
+        </div>
+        <div class="header-actions">
+          <span class="status"><i></i> Network ready</span>
+          <button class="icon-button" id="themeToggle" aria-label="Toggle appearance">◐</button>
+          <button class="icon-button" aria-label="Notifications">♢<span class="dot"></span></button>
+        </div>
+      </header>
+
+      <section class="connect-card">
+        <div class="connect-copy">
+          <span class="card-icon">↗</span>
+          <div><h2>Connect to a remote device</h2><p>Enter the 9-digit SwiftView ID of the device you want to access.</p></div>
+        </div>
+        <form id="connectForm">
+          <label for="remoteId">REMOTE DEVICE ID</label>
+          <div class="input-row">
+            <div class="id-input"><span>⌁</span><input id="remoteId" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="000 000 000" aria-describedby="idHint"></div>
+            <button class="connect-button" type="submit">Connect <span>→</span></button>
+          </div>
+          <div class="form-meta"><small id="idHint">Ask the remote user for their SwiftView ID</small><button type="button" id="pasteButton">▣ Paste ID</button></div>
+        </form>
+      </section>
+
+      <section class="content-grid">
+        <div class="panel recent-panel">
+          <div class="panel-heading"><div><p class="eyebrow">HISTORY</p><h2>Recent connections</h2></div><button class="text-button" id="clearHistory">Clear history</button></div>
+          <div class="device-list" id="deviceList"></div>
+        </div>
+
+        <div class="right-column">
+          <div class="panel this-device">
+            <div class="panel-heading"><div><p class="eyebrow">THIS DEVICE</p><h2>Available for connection</h2></div><label class="switch"><input type="checkbox" checked><span></span></label></div>
+            <div class="device-id-block">
+              <div><small>YOUR SWIFTVIEW ID</small><strong id="ownId">847 291 635</strong></div>
+              <button class="copy-button" id="copyOwnId" aria-label="Copy your SwiftView ID">▣</button>
+            </div>
+            <div class="device-details"><span><i></i> Online</span><span>Windows 11</span><span>v0.1.0</span></div>
+            <button class="share-button" id="shareScreen">Share this screen <span>↗</span></button>
+          </div>
+          <div class="tip-card">
+            <span class="tip-icon">⌘</span>
+            <div><strong>Quick connect</strong><p>Press <kbd>Ctrl</kbd> + <kbd>K</kbd> anywhere to jump to the connection field.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <footer><span><i></i> All systems operational</span><span>Secured with end-to-end encryption</span><span>SwiftView v0.1.0</span></footer>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" id="modalClose" aria-label="Close">×</button>
+      <div class="radar"><span></span><span></span><i>↗</i></div>
+      <p class="eyebrow">SECURE HANDSHAKE</p>
+      <h2 id="modalTitle">Connecting to <span id="targetId"></span></h2>
+      <p id="connectionStatus">Locating remote device…</p>
+      <div class="progress"><i id="progressBar"></i></div>
+      <button class="cancel-button" id="cancelConnect">Cancel</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <div class="session" id="session" hidden>
+    <div class="session-topbar">
+      <div class="session-brand"><span class="brand-mark"><i></i><i></i></span><strong>SwiftView</strong></div>
+      <div class="session-state"><i></i><span id="sessionLabel">Live session</span></div>
+      <div class="session-actions"><span id="sessionCode"></span><button id="fullscreenButton" title="Fullscreen">⛶</button><button class="end-button" id="endSession">End session</button></div>
+    </div>
+    <div class="stage"><video id="remoteVideo" autoplay playsinline></video><div class="waiting" id="waiting"><div class="radar"><span></span><span></span><i>↗</i></div><h2 id="waitingTitle">Ready to connect</h2><p id="waitingText">Share your SwiftView ID with the other device.</p></div></div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
