@@ -6,6 +6,7 @@ const modal = $('#modal');
 const toast = $('#toast');
 let history = JSON.parse(localStorage.getItem('swiftview-history') || 'null') || defaultDevices;
 let socket, peer, localStream, role, connectionTimeout;
+let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
 const ownDigits = localStorage.getItem('swiftview-id') || String(Math.floor(100000000 + Math.random() * 900000000));
 localStorage.setItem('swiftview-id', ownDigits);
 
@@ -45,7 +46,7 @@ function openSignal() {
 }
 
 function createPeer() {
-  peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+  peer = new RTCPeerConnection({ iceServers });
   peer.onicecandidate = ({ candidate }) => candidate && sendSignal({ candidate });
   peer.ontrack = ({ streams }) => {
     $('#remoteVideo').srcObject = streams[0]; $('#waiting').hidden = true;
@@ -136,13 +137,14 @@ $('#notificationsButton').addEventListener('click', () => { $('.dot').hidden = t
 $('#helpButton').addEventListener('click', () => showToast('Share your screen, then send the 9-digit ID to the viewer'));
 $('#platformName').textContent = navigator.userAgentData?.platform || navigator.platform || 'Web browser';
 $('#availabilityToggle').addEventListener('change', (event) => {
-  const enabled = event.target.checked; $('#shareScreen').disabled = !enabled;
-  $('#availabilityTitle').textContent = enabled ? 'Ready to share' : 'Screen sharing paused';
+  const enabled = event.target.checked; $('#shareScreen').disabled = !enabled || !window.isSecureContext;
+  $('#availabilityTitle').textContent = !window.isSecureContext ? 'HTTPS required to share' : enabled ? 'Ready to share' : 'Screen sharing paused';
   $('#deviceStatus').classList.toggle('offline', !enabled); $('#deviceStatus').innerHTML = `<i></i> ${enabled ? 'Ready' : 'Paused'}`;
   if (!enabled && localStream) endSession('Screen sharing paused');
 });
 $('#shareScreen').addEventListener('click', async () => {
-  if (!navigator.mediaDevices?.getDisplayMedia) return showToast('Screen sharing is not supported by this browser');
+  if (!window.isSecureContext) return showToast('Screen sharing requires HTTPS. Use localhost or deploy SwiftView with TLS.');
+  if (!navigator.mediaDevices?.getDisplayMedia) return showToast('This browser does not provide screen sharing');
   try {
     localStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 60 } }, audio: true });
     role = 'host'; await openSignal(); socket.send(JSON.stringify({ type: 'host', code: ownDigits }));
@@ -159,6 +161,8 @@ document.addEventListener('keydown', (event) => {
 });
 if (localStorage.getItem('swiftview-theme') === 'light') document.body.classList.add('light');
 renderHistory();
+if (!window.isSecureContext) { $('#securityBanner').hidden = false; $('#shareScreen').disabled = true; $('#availabilityTitle').textContent = 'HTTPS required to share'; }
+fetch('/api/config').then((response) => response.json()).then((config) => { if (Array.isArray(config.iceServers)) iceServers = config.iceServers; }).catch(() => {});
 fetch('/api/health').then((response) => {
   if (!response.ok) throw new Error();
 }).catch(() => {

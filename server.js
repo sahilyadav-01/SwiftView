@@ -18,6 +18,14 @@ function handler(req, res) {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     return res.end(JSON.stringify({ status: 'ok', service: 'swiftview', version: '0.2.0' }));
   }
+  if (url.pathname === '/api/config') {
+    const iceServers = [{ urls: process.env.STUN_URL || 'stun:stun.l.google.com:19302' }];
+    if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+      iceServers.push({ urls: process.env.TURN_URL, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
+    }
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(JSON.stringify({ iceServers, turnConfigured: iceServers.length > 1 }));
+  }
 
   const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
   const file = path.resolve(root, relative);

@@ -25,6 +25,13 @@ test('returns service health', async () => {
   assert.deepEqual(await response.json(), { status: 'ok', service: 'swiftview', version: '0.2.0' });
 });
 
+test('returns safe public ICE configuration', async () => {
+  const response = await fetch(`${baseUrl}/api/config`);
+  const config = await response.json();
+  assert.equal(config.turnConfigured, false);
+  assert.match(config.iceServers[0].urls, /^stun:/);
+});
+
 test('prevents path traversal', async () => {
   const response = await fetch(`${baseUrl}/..%2Fplan.md`);
   assert.notEqual(response.status, 200);
