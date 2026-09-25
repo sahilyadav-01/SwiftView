@@ -22,7 +22,7 @@ test('serves the application', async () => {
 
 test('returns service health', async () => {
   const response = await fetch(`${baseUrl}/api/health`);
-  assert.deepEqual(await response.json(), { status: 'ok', service: 'swiftview', version: '0.1.0' });
+  assert.deepEqual(await response.json(), { status: 'ok', service: 'swiftview', version: '0.2.0' });
 });
 
 test('prevents path traversal', async () => {

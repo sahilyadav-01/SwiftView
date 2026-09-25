@@ -16,7 +16,7 @@ function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   if (url.pathname === '/api/health') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ status: 'ok', service: 'swiftview', version: '0.1.0' }));
+    return res.end(JSON.stringify({ status: 'ok', service: 'swiftview', version: '0.2.0' }));
   }
 
   const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -39,7 +39,7 @@ function handler(req, res) {
 }
 
 function attachSignaling(server) {
-  const wss = new WebSocketServer({ server, path: '/signal' });
+  const wss = new WebSocketServer({ server, path: '/signal', maxPayload: 64 * 1024 });
   const rooms = new Map();
   const send = (socket, payload) => socket && socket.readyState === 1 && socket.send(JSON.stringify(payload));
 
