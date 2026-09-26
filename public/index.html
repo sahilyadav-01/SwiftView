@@ -28,7 +28,7 @@
       <div class="sidebar-bottom">
         <div class="secure-note"><span>◆</span><div><strong>End-to-end encrypted</strong><small>Your sessions stay private.</small></div></div>
           <button class="nav-item" id="helpButton"><span class="icon">?</span> Help & support</button>
-        <button class="profile">
+        <button class="profile" id="profileButton">
           <span class="avatar">SY</span>
           <span><strong>Sahil Yadav</strong><small>Personal workspace</small></span>
           <span class="more">•••</span>
@@ -106,6 +106,21 @@
   </div>
 
   <div class="toast" id="toast" role="status"></div>
+  <div class="modal-backdrop" id="incomingModal" hidden>
+    <div class="modal approval-modal" role="dialog" aria-modal="true" aria-labelledby="incomingTitle">
+      <div class="request-avatar">SV</div>
+      <p class="eyebrow">INCOMING REQUEST</p>
+      <h2 id="incomingTitle">A viewer wants to connect</h2>
+      <p>Only approve if you recognize and trust the person using your SwiftView ID.</p>
+      <div class="approval-actions"><button class="cancel-button" id="rejectViewer">Decline</button><button class="connect-button" id="acceptViewer">Allow viewing</button></div>
+    </div>
+  </div>
+  <div class="drawer-backdrop" id="drawer" hidden>
+    <aside class="drawer" aria-labelledby="drawerTitle">
+      <div class="drawer-header"><div><p class="eyebrow" id="drawerEyebrow">SWIFTVIEW</p><h2 id="drawerTitle">Details</h2></div><button id="drawerClose" aria-label="Close panel">&times;</button></div>
+      <div id="drawerContent"></div>
+    </aside>
+  </div>
   <div class="session" id="session" hidden>
     <div class="session-topbar">
       <div class="session-brand"><span class="brand-mark"><i></i><i></i></span><strong>SwiftView</strong></div>

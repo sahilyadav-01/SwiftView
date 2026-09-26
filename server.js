@@ -67,7 +67,19 @@ function attachSignaling(server) {
         if (!room?.host || room.host.readyState !== socket.OPEN) return send(socket, { type: 'error', message: 'Remote device is offline or unavailable' });
         if (room.viewer?.readyState === socket.OPEN) return send(socket, { type: 'error', message: 'Remote device is already in a session' });
         socket.room = message.code; socket.role = 'viewer'; room.viewer = socket;
-        send(socket, { type: 'joined' }); return send(room.host, { type: 'peer-joined' });
+        send(socket, { type: 'waiting', message: 'Waiting for the host to approve your request' });
+        return send(room.host, { type: 'peer-request' });
+      }
+      if (message.type === 'approve' && socket.role === 'host') {
+        const room = rooms.get(socket.room);
+        if (!room?.viewer) return;
+        send(room.viewer, { type: 'joined' }); return send(room.host, { type: 'peer-joined' });
+      }
+      if (message.type === 'reject' && socket.role === 'host') {
+        const room = rooms.get(socket.room);
+        if (!room?.viewer) return;
+        send(room.viewer, { type: 'error', message: 'The host declined the connection request' });
+        room.viewer.room = null; room.viewer.role = null; room.viewer = null; return;
       }
       if (message.type === 'signal' && socket.room) {
         const room = rooms.get(socket.room);

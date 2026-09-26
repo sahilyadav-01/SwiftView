@@ -48,9 +48,34 @@ test('pairs a host and viewer and relays WebRTC signaling', async () => {
   host.send(JSON.stringify({ type: 'host', code: '123456789' }));
   await new Promise((resolve) => host.once('message', resolve));
   viewer.send(JSON.stringify({ type: 'join', code: '123456789' }));
+  const request = JSON.parse(await new Promise((resolve) => host.once('message', resolve)));
+  assert.equal(request.type, 'peer-request');
+  host.send(JSON.stringify({ type: 'approve' }));
+  await new Promise((resolve) => viewer.once('message', resolve));
   await new Promise((resolve) => host.once('message', resolve));
   const relayed = new Promise((resolve) => viewer.once('message', (data) => resolve(JSON.parse(data))));
   host.send(JSON.stringify({ type: 'signal', data: { candidate: 'test-candidate' } }));
   assert.deepEqual(await relayed, { type: 'signal', data: { candidate: 'test-candidate' } });
+  host.close(); viewer.close();
+});
+
+test('lets a host reject an incoming viewer', async () => {
+  const wsUrl = baseUrl.replace('http', 'ws') + '/signal';
+  const host = new WebSocket(wsUrl);
+  const viewer = new WebSocket(wsUrl);
+  await Promise.all([
+    new Promise((resolve) => host.once('open', resolve)),
+    new Promise((resolve) => viewer.once('open', resolve))
+  ]);
+  host.send(JSON.stringify({ type: 'host', code: '987654321' }));
+  await new Promise((resolve) => host.once('message', resolve));
+  viewer.send(JSON.stringify({ type: 'join', code: '987654321' }));
+  await new Promise((resolve) => host.once('message', resolve));
+  const rejected = new Promise((resolve) => viewer.on('message', (data) => {
+    const message = JSON.parse(data);
+    if (message.type === 'error') resolve(message);
+  }));
+  host.send(JSON.stringify({ type: 'reject' }));
+  assert.match((await rejected).message, /declined/i);
   host.close(); viewer.close();
 });
