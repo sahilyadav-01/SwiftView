@@ -1,40 +1,37 @@
-//! SwiftView Native Rust Host Daemon
-//!
-//! High-performance, zero-latency desktop host daemon with hardware-accelerated
-//! frame capture (Windows DXGI), NVENC/QuickSync encoding, and prioritized UDP WebRTC transport.
+//! SwiftView native Windows host.
 
 mod adaptive;
 mod capture;
 mod encoder;
 mod signaling;
 
-use adaptive::AdaptiveController;
-use capture::windows_dxgi::DxgiDesktopDuplication;
-use capture::ScreenCapture;
+use anyhow::{bail, Context, Result};
 use clap::Parser;
-use encoder::nvenc::HardwareEncoder;
-use encoder::VideoEncoder;
+use signaling::SignalingClient;
+use std::{fs, path::PathBuf};
 
 #[derive(Parser, Debug)]
-#[command(name = "swiftview-agent")]
-#[command(version = "0.2.0")]
-#[command(about = "Native low-latency desktop host daemon for SwiftView")]
+#[command(
+    name = "swiftview-agent",
+    version,
+    about = "Native SwiftView desktop host"
+)]
 struct Args {
-    /// SwiftView signaling server WebSocket URL
+    /// SwiftView signaling server WebSocket URL.
     #[arg(short, long, default_value = "ws://localhost:4173/signal")]
     server: String,
 
-    /// 9-digit device ID to register (generated randomly if omitted)
+    /// Nine-digit device ID. A stable ID is generated and saved when omitted.
     #[arg(short, long)]
     id: Option<String>,
 
-    /// Display index to capture (0 = Primary)
-    #[arg(short, long, default_value_t = 0)]
-    display: u32,
+    /// Approve viewer requests without a local confirmation prompt.
+    #[arg(long, default_value_t = false)]
+    unattended: bool,
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -43,47 +40,72 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    let host_id = args.id.unwrap_or_else(|| {
-        let rand_val: u32 = 100_000_000 + (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() % 900_000_000) as u32;
-        rand_val.to_string()
-    });
+    let host_id = match args.id {
+        Some(id) => validate_id(&id)?,
+        None => load_or_create_device_id()?,
+    };
 
-    tracing::info!("=======================================================");
-    tracing::info!(" SwiftView Native Daemon v0.2.0 [UDP Optimized]        ");
-    tracing::info!(" Host Device ID: {}", signaling::SignalingClient::format_id(&host_id));
-    tracing::info!(" Signaling Server: {}", args.server);
-    tracing::info!(" Transport Mode: Prioritized UDP over Direct P2P       ");
-    tracing::info!("=======================================================");
-
-    // 1. Initialize hardware-accelerated desktop capture
-    let mut capture_engine = DxgiDesktopDuplication::new(args.display);
-    capture_engine.init()?;
-
-    // 2. Initialize hardware video encoder
-    let mut encoder_engine = HardwareEncoder::new();
-    encoder_engine.init(1920, 1080, 60, 3200)?;
-
-    // 3. Initialize Adaptive Network Controller (ANC)
-    let mut adaptive_ctrl = AdaptiveController::new();
-    tracing::info!("Adaptive Network Controller active. Target: Sub-50ms latency.");
-
-    // Simulation of network adaptation monitoring
-    let (tier, target_fps, target_bitrate) = adaptive_ctrl.update_metrics(24, 3, 0.2);
+    tracing::info!("SwiftView Native Host v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!("Device ID: {}", SignalingClient::format_id(&host_id));
+    tracing::info!("Signaling server: {}", args.server);
     tracing::info!(
-        "Current Network Health: {:?} (Target: {} FPS, {} Kbps)",
-        tier,
-        target_fps,
-        target_bitrate
+        "Unattended access: {}",
+        if args.unattended {
+            "enabled"
+        } else {
+            "disabled"
+        }
     );
 
-    tracing::info!("Ready for incoming viewer connections. Press Ctrl+C to terminate.");
+    let client = SignalingClient::new(args.server, host_id, args.unattended);
+    tokio::select! {
+        result = client.run() => result?,
+        result = tokio::signal::ctrl_c() => result.context("failed to install Ctrl+C handler")?,
+    }
 
-    // Keep running
-    tokio::signal::ctrl_c().await?;
-    tracing::info!("Shutting down SwiftView native daemon cleanly.");
-
+    tracing::info!("SwiftView native host stopped cleanly");
     Ok(())
+}
+
+fn validate_id(value: &str) -> Result<String> {
+    let digits: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() != 9 {
+        bail!("device ID must contain exactly nine digits");
+    }
+    Ok(digits)
+}
+
+fn load_or_create_device_id() -> Result<String> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("SwiftView");
+    let path = base.join("device-id");
+    if path.exists() {
+        return validate_id(fs::read_to_string(&path)?.trim());
+    }
+
+    fs::create_dir_all(&base)?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
+    let id = format!("{:09}", 100_000_000 + (nanos % 900_000_000));
+    fs::write(&path, &id)
+        .with_context(|| format!("could not save device ID to {}", path.display()))?;
+    Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_formatted_device_id() {
+        assert_eq!(validate_id("123 456 789").unwrap(), "123456789");
+    }
+
+    #[test]
+    fn rejects_invalid_device_id() {
+        assert!(validate_id("1234").is_err());
+    }
 }

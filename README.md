@@ -60,6 +60,19 @@ node --test
 
 Both devices must reach this Node server. Internet deployment requires HTTPS/WSS and a TURN server. Browsers intentionally prohibit direct system-wide input injection. On Windows, SwiftView passes authorized remote-control events to the included PowerShell input bridge. The experimental native Rust capture and control agent is available in [`agent/`](agent/README.md).
 
+### Native AnyDesk-alternative roadmap
+
+- [x] Stable native device identity
+- [x] Native signaling registration and automatic reconnect
+- [x] Local connection approval and explicit unattended mode
+- [ ] Real DXGI desktop frame capture
+- [ ] H.264 hardware encoding with software fallback
+- [ ] Native WebRTC host and viewer media transport
+- [ ] Windows mouse and keyboard injection inside the native host
+- [ ] Authenticated unattended-access credentials
+- [ ] Clipboard synchronization and encrypted file transfer
+- [ ] Windows service and signed installer
+
 ## Internet deployment
 
 Deploy the included `Dockerfile` (or `render.yaml`) to a host that provides a public HTTPS URL. Configure `TURN_URL`, `TURN_USERNAME`, and `TURN_CREDENTIAL` using credentials from a TURN service or your own Coturn instance. HTTPS enables browser screen capture; TURN relays WebRTC when direct NAT traversal fails. Never commit TURN credentials—use deployment environment variables.

@@ -1,10 +1,14 @@
 # SwiftView Native Agent Daemon (`swiftview-agent`)
 
-A high-performance, low-latency desktop host daemon for **SwiftView** written in **Rust**. It implements OS-level hardware-accelerated screen capture (Windows DXGI Desktop Duplication API), hardware video encoding (NVENC / QuickSync), and prioritized UDP transport over direct WebRTC peer-to-peer connections.
+A native desktop host for **SwiftView**, written in Rust by **Sahil Yadav**.
+
+## Current implementation status
+
+The native host foundation is operational: it keeps a stable nine-digit device ID, connects to the SwiftView WebSocket signaling service, registers as an available host, reconnects with exponential backoff, and locally approves or rejects viewer requests. The DXGI capture, hardware encoder, WebRTC media transport, native input, clipboard, and file-transfer modules are the next implementation milestones; their current source files are scaffolding and are not yet production implementations.
 
 ---
 
-## Key Architectural Advantages
+## Architecture targets
 
 - **Zero-Copy Frame Capture:** Uses the Windows DXGI Desktop Duplication API (`IDXGIOutputDuplication`) directly on Direct3D 11 devices, eliminating the CPU copy latency inherent in browser-based `getDisplayMedia()`.
 - **Prioritized UDP Transport:** Direct P2P UDP media streams (`webrtc-rs`) that bypass TCP head-of-line blocking under packet loss.
@@ -57,11 +61,16 @@ node server.js
 
 In another terminal, run the native agent daemon:
 ```powershell
-# Connect with an auto-generated 9-digit device ID:
+# Connect with a stable, automatically generated 9-digit device ID:
 cargo run --release
 
 # Or specify a custom ID and signaling URL:
 cargo run --release -- --id 847291635 --server ws://localhost:4173/signal
+
+# Explicitly enable unattended approval (disabled by default):
+cargo run --release -- --unattended
 ```
 
-Now open [http://localhost:4173](http://localhost:4173) in any browser, enter the 9-digit ID, and experience hardware-accelerated direct UDP streaming!
+Without `--unattended`, each incoming connection must be approved locally by typing `y`. Unattended mode currently controls approval only; password authentication will be added before production unattended access is considered complete.
+
+Open [http://localhost:4173](http://localhost:4173) to confirm that the native device appears online. Browser-to-native video is not enabled yet while the capture and WebRTC milestones are under development.

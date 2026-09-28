@@ -28,7 +28,12 @@ impl AdaptiveController {
     }
 
     /// Update network metrics from inbound RTCP Receiver Reports
-    pub fn update_metrics(&mut self, rtt_ms: u32, jitter_ms: u32, loss_percent: f32) -> (NetworkTier, u32, u32) {
+    pub fn update_metrics(
+        &mut self,
+        rtt_ms: u32,
+        jitter_ms: u32,
+        loss_percent: f32,
+    ) -> (NetworkTier, u32, u32) {
         self.rtt_ms = rtt_ms;
         self.jitter_ms = jitter_ms;
         self.loss_percent = loss_percent;
