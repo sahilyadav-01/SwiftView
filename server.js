@@ -266,35 +266,40 @@ function ensureCertificate() {
 }
 
 if (require.main === module) {
-  const isHttps = process.argv.includes('--https') || process.env.HTTPS === 'true';
   const localIps = getLocalIps();
   const primaryIp = localIps[0] || '127.0.0.1';
+  const sslOpts = ensureCertificate();
 
-  let server;
-  let proto = 'http';
-  if (isHttps) {
-    const sslOpts = ensureCertificate();
-    if (sslOpts) {
-      server = https.createServer(sslOpts, handler);
-      proto = 'https';
-    } else {
-      console.warn('Falling back to HTTP (no certificate available).');
-      server = http.createServer(handler);
-    }
+  const httpServer = http.createServer(handler);
+  attachSignaling(httpServer);
+
+  let mainServer;
+  if (sslOpts) {
+    const httpsServer = https.createServer(sslOpts, handler);
+    attachSignaling(httpsServer);
+
+    mainServer = net.createServer((socket) => {
+      socket.once('data', (buf) => {
+        socket.pause();
+        socket.unshift(buf);
+        if (buf[0] === 22) {
+          httpsServer.emit('connection', socket);
+        } else {
+          httpServer.emit('connection', socket);
+        }
+        process.nextTick(() => socket.resume());
+      });
+    });
   } else {
-    server = http.createServer(handler);
+    mainServer = httpServer;
   }
 
-  attachSignaling(server);
-  server.listen(port, '0.0.0.0', () => {
+  mainServer.listen(port, '0.0.0.0', () => {
     console.log(`\n======================================================`);
-    console.log(`  SwiftView Server Running (${proto.toUpperCase()})`);
-    console.log(`  > Local:   ${proto}://localhost:${port}`);
-    console.log(`  > Network: ${proto}://${primaryIp}:${port}`);
-    if (proto === 'http') {
-      console.log(`  * Note: Dev Shell works on HTTP. For browser screen`);
-      console.log(`    capture over LAN, run with --https or enable Chrome flag.`);
-    }
+    console.log(`  SwiftView Server Running (Dual HTTP & HTTPS Active)`);
+    console.log(`  > Local:   http://localhost:${port}  |  https://localhost:${port}`);
+    console.log(`  > Network: http://${primaryIp}:${port}  |  https://${primaryIp}:${port}`);
+    console.log(`  * Open https://${primaryIp}:${port} for full 60fps screen video.`);
     console.log(`======================================================\n`);
   });
 }
