@@ -1,5 +1,6 @@
 const http = require('node:http');
 const https = require('node:https');
+const net = require('node:net');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
