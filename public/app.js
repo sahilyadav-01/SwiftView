@@ -173,13 +173,62 @@ function closeModal() {
 }
 
 function openSignal() {
+  if (socket && socket.readyState === WebSocket.OPEN) return Promise.resolve(socket);
   return new Promise((resolve, reject) => {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(`${protocol}//${location.host}/signal`);
-    socket.addEventListener('open', resolve, { once: true });
+    socket.addEventListener('open', () => resolve(socket), { once: true });
     socket.addEventListener('error', () => reject(new Error('Signaling unavailable')), { once: true });
     socket.addEventListener('message', onSignalMessage);
+    socket.addEventListener('close', () => {
+      // Reconnect standby if availability enabled and not in active session
+      if ($('#availabilityToggle')?.checked && !peer && role === 'host') {
+        setTimeout(() => registerAsHost(), 2000);
+      }
+    });
   });
+}
+
+function updateHostStatusUI(state) {
+  const statusEl = $('#deviceStatus');
+  const titleEl = $('#availabilityTitle');
+  const shareBtn = $('#shareScreen');
+
+  if (state === 'online') {
+    statusEl.className = 'status online';
+    statusEl.innerHTML = '<i></i> Online (Ready)';
+    titleEl.textContent = 'Ready to connect';
+    shareBtn.disabled = false;
+    if (localStream) {
+      shareBtn.innerHTML = 'Sharing screen <span>↗</span>';
+    } else {
+      shareBtn.innerHTML = 'Share this screen <span>↗</span>';
+    }
+  } else if (state === 'offline' || state === 'paused') {
+    statusEl.className = 'status offline';
+    statusEl.innerHTML = '<i></i> Offline / Paused';
+    titleEl.textContent = 'Screen sharing paused';
+    shareBtn.disabled = true;
+  }
+}
+
+async function registerAsHost() {
+  if (!$('#availabilityToggle')?.checked) return;
+  try {
+    await openSignal();
+    role = 'host';
+    const meta = {
+      platform: navigator.userAgentData?.platform || navigator.platform || 'Web browser',
+      screenCapable: !!(window.isSecureContext && navigator.mediaDevices?.getDisplayMedia),
+      secureContext: window.isSecureContext
+    };
+    socket.send(JSON.stringify({ type: 'host', code: ownDigits, meta }));
+    updateHostStatusUI('online');
+    logHostEvent('Registered host standby with signaling service.');
+  } catch (err) {
+    console.warn('Signaling host registration failed:', err);
+    updateHostStatusUI('offline');
+  }
 }
 
 /* DataChannel & WebRTC Logic */
@@ -796,6 +845,20 @@ function createPeer() {
       logHostEvent('Peer connection established successfully over prioritized UDP');
       startAdaptiveNetworkController();
       startDirtyRectLoop();
+
+      if (role === 'viewer') {
+        if (!$('#remoteVideo').srcObject) {
+          $('#waiting').hidden = false;
+          $('#waitingTitle').textContent = 'Dev Shell Active';
+          $('#waitingText').textContent = 'WebRTC DataChannel connected! The remote host has not started video screen broadcasting yet. You can use Dev Shell right now, or ask the host to click "Share Screen".';
+          const switchBtn = $('#waitingToShellBtn');
+          if (switchBtn) switchBtn.style.display = 'inline-flex';
+        }
+      } else if (role === 'host') {
+        if (!localStream) {
+          showToast('Viewer connected to Dev Shell! Click "Share Screen" in topbar to broadcast display.');
+        }
+      }
     } else if (['failed', 'disconnected'].includes(peer.connectionState)) {
       endSession('Peer disconnected');
     }
@@ -814,13 +877,21 @@ function sendSignal(data) {
 
 async function onSignalMessage(event) {
   const message = JSON.parse(event.data);
+  if (message.type === 'registered') {
+    updateHostStatusUI('online');
+    fetchAndRenderFleet();
+    return;
+  }
   if (message.type === 'error') { const detail = message.message; endSession(); showToast(detail); return; }
   if (message.type === 'peer-request' && role === 'host') { $('#incomingModal').hidden = false; return; }
   if (message.type === 'peer-joined' && role === 'host') {
     $('#incomingModal').hidden = true;
-    $('#waitingTitle').textContent = 'Viewer found'; $('#waitingText').textContent = 'Establishing encrypted connection…';
+    $('#waitingTitle').textContent = 'Viewer connected';
+    $('#waitingText').textContent = 'Establishing encrypted connection…';
     const pc = createPeer();
-    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    if (localStream) {
+      localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    }
 
     // Host establishes the RTCDataChannel for remote dev shell
     const channel = pc.createDataChannel('swift-channel', { ordered: true });
@@ -829,7 +900,7 @@ async function onSignalMessage(event) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     sendSignal({ description: pc.localDescription });
-    logHostEvent('Offer generated with media track + DataChannel');
+    logHostEvent(`Offer generated (${localStream ? 'Screen track + DataChannel' : 'Dev Shell DataChannel'})`);
   }
   if (message.type === 'waiting') { $('#connectionStatus').textContent = message.message; $('#progressBar').style.width = '58%'; }
   if (message.type === 'joined') { $('#connectionStatus').textContent = 'Approved. Securing channels…'; $('#progressBar').style.width = '82%'; }
@@ -856,7 +927,18 @@ function showSession(label) {
   $('#session').hidden = false;
   $('#sessionCode').textContent = `ID ${role === 'host' ? formatId(ownDigits) : formatId(remoteId.value)}`;
   $('#terminalHostPrompt').textContent = `admin@node-${role === 'host' ? ownDigits.slice(0, 4) : digits(remoteId.value).slice(0, 4)}:~$`;
-  setSessionMode(currentMode || 'screen');
+  if (role === 'host') {
+    $('#broadcastScreenBtn').hidden = false;
+    $('#broadcastScreenBtn').textContent = localStream ? '⏹ Stop Screen' : '📺 Share Screen';
+    $('#broadcastScreenBtn').classList.toggle('active', !!localStream);
+  } else {
+    $('#broadcastScreenBtn').hidden = true;
+  }
+  if (!localStream && role === 'host' && currentMode === 'screen') {
+    setSessionMode('shell');
+  } else {
+    setSessionMode(currentMode || 'screen');
+  }
 }
 
 function endSession(message) {
@@ -878,13 +960,16 @@ function endSession(message) {
   $('#incomingModal').hidden = true;
   $('#waitingTitle').textContent = 'Ready to connect';
   $('#waitingText').textContent = 'Share your SwiftView ID with the other device.';
-  $('#shareScreen').disabled = !$('#availabilityToggle').checked || !window.isSecureContext;
+  $('#broadcastScreenBtn').hidden = true;
   $('#shareScreen').firstChild.textContent = 'Share this screen ';
   $('#dcChip').classList.remove('ready');
   $('#dcChip').innerHTML = 'DataChannel: <b>Ready</b>';
   $('#rttValue').textContent = '--';
   closeModal();
   if (message) showToast(message);
+  if ($('#availabilityToggle')?.checked) {
+    setTimeout(() => registerAsHost(), 350);
+  }
 }
 
 async function connect(id, initialMode = 'screen') {
@@ -1029,23 +1114,93 @@ $('#acceptViewer').addEventListener('click', () => { $('#incomingModal').hidden 
 $('#rejectViewer').addEventListener('click', () => { $('#incomingModal').hidden = true; socket?.send(JSON.stringify({ type: 'reject' })); showToast('Connection declined'); });
 $('#platformName').textContent = navigator.userAgentData?.platform || navigator.platform || 'Web browser';
 $('#availabilityToggle').addEventListener('change', (event) => {
-  const enabled = event.target.checked; $('#shareScreen').disabled = !enabled || !window.isSecureContext;
-  $('#availabilityTitle').textContent = !window.isSecureContext ? 'HTTPS required to share' : enabled ? 'Ready to share' : 'Screen sharing paused';
-  $('#deviceStatus').classList.toggle('offline', !enabled); $('#deviceStatus').innerHTML = `<i></i> ${enabled ? 'Ready' : 'Paused'}`;
-  if (!enabled && localStream) endSession('Screen sharing paused');
+  const enabled = event.target.checked;
+  if (enabled) {
+    registerAsHost();
+  } else {
+    updateHostStatusUI('paused');
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'unhost' }));
+    }
+    if (localStream) endSession('Screen sharing paused');
+  }
 });
 
 $('#shareScreen').addEventListener('click', async () => {
-  if (!window.isSecureContext) return showToast('Screen sharing requires HTTPS. Use localhost or deploy SwiftView with TLS.');
+  if (!window.isSecureContext) {
+    $('#guideLanUrl').textContent = `${location.protocol}//${location.host}`;
+    $('#secGuideModal').hidden = false;
+    return;
+  }
   if (!navigator.mediaDevices?.getDisplayMedia) return showToast('This browser does not provide screen sharing');
   try {
     localStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 60 } }, audio: true });
-    role = 'host'; await openSignal(); socket.send(JSON.stringify({ type: 'host', code: ownDigits }));
-    $('#shareScreen').disabled = true; $('#shareScreen').firstChild.textContent = 'Sharing screen ';
-    $('#remoteVideo').srcObject = localStream; $('#waiting').hidden = true; showSession('Waiting for viewer');
-    localStream.getVideoTracks()[0].addEventListener('ended', () => endSession('Screen sharing stopped'));
-    logHostEvent('Screen captured. Waiting for viewer handshake.');
-  } catch (error) { endSession(); if (error.name !== 'NotAllowedError') showToast('Could not start screen sharing'); }
+    $('#shareScreen').firstChild.textContent = 'Sharing screen ';
+    $('#remoteVideo').srcObject = localStream;
+    $('#waiting').hidden = true;
+    localStream.getVideoTracks()[0].addEventListener('ended', () => {
+      localStream = null;
+      $('#shareScreen').firstChild.textContent = 'Share this screen ';
+      $('#broadcastScreenBtn').textContent = '📺 Share Screen';
+      $('#broadcastScreenBtn').classList.remove('active');
+    });
+    logHostEvent('Screen captured. Ready for incoming connections.');
+    registerAsHost();
+    showToast('Screen ready to broadcast to incoming viewer');
+  } catch (error) {
+    if (error.name !== 'NotAllowedError') showToast('Could not start screen sharing');
+  }
+});
+
+// Session broadcast screen button
+$('#broadcastScreenBtn')?.addEventListener('click', async () => {
+  if (localStream) {
+    localStream.getTracks().forEach((t) => t.stop());
+    localStream = null;
+    $('#broadcastScreenBtn').textContent = '📺 Share Screen';
+    $('#broadcastScreenBtn').classList.remove('active');
+    $('#shareScreen').firstChild.textContent = 'Share this screen ';
+    showToast('Screen broadcast stopped');
+  } else {
+    if (!window.isSecureContext) {
+      $('#guideLanUrl').textContent = `${location.protocol}//${location.host}`;
+      $('#secGuideModal').hidden = false;
+      return;
+    }
+    try {
+      localStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 60 } }, audio: true });
+      $('#remoteVideo').srcObject = localStream;
+      $('#waiting').hidden = true;
+      if (peer) {
+        localStream.getTracks().forEach((track) => peer.addTrack(track, localStream));
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        sendSignal({ description: peer.localDescription });
+      }
+      $('#broadcastScreenBtn').textContent = '⏹ Stop Screen';
+      $('#broadcastScreenBtn').classList.add('active');
+      localStream.getVideoTracks()[0].addEventListener('ended', () => {
+        localStream = null;
+        $('#broadcastScreenBtn').textContent = '📺 Share Screen';
+        $('#broadcastScreenBtn').classList.remove('active');
+      });
+      showToast('Screen broadcast started');
+    } catch (err) {
+      if (err.name !== 'NotAllowedError') showToast('Could not capture screen');
+    }
+  }
+});
+
+// Security Guide Modal Listeners
+$('#openSecGuideBtn')?.addEventListener('click', () => {
+  $('#guideLanUrl').textContent = `${location.protocol}//${location.host}`;
+  $('#secGuideModal').hidden = false;
+});
+$('#closeSecGuideBtn')?.addEventListener('click', () => {
+  $('#secGuideModal').hidden = true;
+});
+$('#secGuideOkBtn')?.addEventListener('click', () => {
+  $('#secGuideModal').hidden = true;
 });
 
 $('#endSession').addEventListener('click', () => endSession('Session ended'));
@@ -1105,10 +1260,16 @@ fetch('/api/transport').then((res) => res.json()).then((t) => {
   logHostEvent(`Transport multiplexer active: ${modeText} (unreliable datagrams + reliable control streams)`);
 }).catch(() => {});
 
-if (!window.isSecureContext) { $('#securityBanner').hidden = false; $('#shareScreen').disabled = true; $('#availabilityTitle').textContent = 'HTTPS required to share'; }
+if (!window.isSecureContext) {
+  $('#securityBanner').hidden = false;
+  $('#guideLanUrl').textContent = `${location.protocol}//${location.host}`;
+}
 fetch('/api/config').then((response) => response.json()).then((config) => { if (Array.isArray(config.iceServers)) iceServers = config.iceServers; }).catch(() => {});
 fetch('/api/health').then((response) => {
   if (!response.ok) throw new Error();
 }).catch(() => {
   $('.status').classList.add('offline'); $('.status').innerHTML = '<i></i> Service unavailable';
 });
+
+// Automatically register as host standby so this device is online and discoverable
+registerAsHost();

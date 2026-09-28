@@ -1,6 +1,9 @@
 const http = require('node:http');
+const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
+const { execSync } = require('node:child_process');
 const { WebSocketServer } = require('ws');
 
 const root = path.join(__dirname, 'public');
@@ -13,6 +16,19 @@ const types = {
 };
 
 const rooms = new Map();
+
+function getLocalIps() {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push(iface.address);
+      }
+    }
+  }
+  return ips;
+}
 
 function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -168,19 +184,35 @@ function attachSignaling(server) {
         return send(socket, { type: 'fleet', devices });
       }
       if (message.type === 'host' && /^\d{9}$/.test(message.code)) {
+        if (socket.room && socket.role === 'host' && socket.room !== message.code) {
+          rooms.delete(socket.room);
+        }
         const existing = rooms.get(message.code);
-        if (existing?.host?.readyState === socket.OPEN) return send(socket, { type: 'error', message: 'Device ID is already online' });
+        if (existing?.host && existing.host !== socket && existing.host.readyState === socket.OPEN) {
+          return send(socket, { type: 'error', message: 'Device ID is already online' });
+        }
         socket.room = message.code; socket.role = 'host';
-        rooms.set(message.code, { host: socket, viewer: null, registeredAt: Date.now() });
+        rooms.set(message.code, { host: socket, viewer: null, meta: message.meta || {}, registeredAt: Date.now() });
         return send(socket, { type: 'registered' });
+      }
+      if (message.type === 'unhost') {
+        if (socket.room && socket.role === 'host') {
+          rooms.delete(socket.room);
+          socket.room = null;
+          socket.role = null;
+          return send(socket, { type: 'unregistered' });
+        }
       }
       if (message.type === 'join' && /^\d{9}$/.test(message.code)) {
         const room = rooms.get(message.code);
         if (!room?.host || room.host.readyState !== socket.OPEN) return send(socket, { type: 'error', message: 'Remote device is offline or unavailable' });
         if (room.viewer?.readyState === socket.OPEN) return send(socket, { type: 'error', message: 'Remote device is already in a session' });
+        if (socket.room && socket.role === 'host') {
+          rooms.delete(socket.room);
+        }
         socket.room = message.code; socket.role = 'viewer'; room.viewer = socket;
         send(socket, { type: 'waiting', message: 'Waiting for the host to approve your request' });
-        return send(room.host, { type: 'peer-request' });
+        return send(room.host, { type: 'peer-request', meta: message.meta || {} });
       }
       if (message.type === 'approve' && socket.role === 'host') {
         const room = rooms.get(socket.room);
@@ -207,11 +239,62 @@ function attachSignaling(server) {
   return wss;
 }
 
+function ensureCertificate() {
+  const pfxPath = path.join(__dirname, 'cert.pfx');
+  if (fs.existsSync(pfxPath)) {
+    return { pfx: fs.readFileSync(pfxPath), passphrase: 'swiftview' };
+  }
+  const certPem = path.join(__dirname, 'cert.pem');
+  const keyPem = path.join(__dirname, 'key.pem');
+  if (fs.existsSync(certPem) && fs.existsSync(keyPem)) {
+    return { cert: fs.readFileSync(certPem), key: fs.readFileSync(keyPem) };
+  }
+  try {
+    const localIps = getLocalIps();
+    const names = ['localhost', '127.0.0.1', ...localIps].map((n) => `'${n}'`).join(',');
+    const pfxClean = pfxPath.replace(/\\/g, '/');
+    const cmd = `$cert = New-SelfSignedCertificate -DnsName ${names} -CertStoreLocation 'cert:\\CurrentUser\\My'; $pwd = ConvertTo-SecureString -String 'swiftview' -Force -AsPlainText; Export-PfxCertificate -Cert $cert -FilePath '${pfxClean}' -Password $pwd`;
+    execSync(`powershell -NoProfile -Command "${cmd}"`, { stdio: 'ignore' });
+    if (fs.existsSync(pfxPath)) {
+      return { pfx: fs.readFileSync(pfxPath), passphrase: 'swiftview' };
+    }
+  } catch (err) {
+    console.warn('Could not auto-generate self-signed certificate:', err.message);
+  }
+  return null;
+}
+
 if (require.main === module) {
-  const server = http.createServer(handler);
+  const isHttps = process.argv.includes('--https') || process.env.HTTPS === 'true';
+  const localIps = getLocalIps();
+  const primaryIp = localIps[0] || '127.0.0.1';
+
+  let server;
+  let proto = 'http';
+  if (isHttps) {
+    const sslOpts = ensureCertificate();
+    if (sslOpts) {
+      server = https.createServer(sslOpts, handler);
+      proto = 'https';
+    } else {
+      console.warn('Falling back to HTTP (no certificate available).');
+      server = http.createServer(handler);
+    }
+  } else {
+    server = http.createServer(handler);
+  }
+
   attachSignaling(server);
-  server.listen(port, () => {
-    console.log(`SwiftView is running at http://localhost:${port}`);
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`\n======================================================`);
+    console.log(`  SwiftView Server Running (${proto.toUpperCase()})`);
+    console.log(`  > Local:   ${proto}://localhost:${port}`);
+    console.log(`  > Network: ${proto}://${primaryIp}:${port}`);
+    if (proto === 'http') {
+      console.log(`  * Note: Dev Shell works on HTTP. For browser screen`);
+      console.log(`    capture over LAN, run with --https or enable Chrome flag.`);
+    }
+    console.log(`======================================================\n`);
   });
 }
 

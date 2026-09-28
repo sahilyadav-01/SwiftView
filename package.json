@@ -5,6 +5,7 @@
   "description": "A low-latency remote desktop client prototype",
   "scripts": {
     "start": "node server.js",
+    "start:https": "node server.js --https",
     "test": "node --test"
   },
   "engines": {

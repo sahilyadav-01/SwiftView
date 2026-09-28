@@ -50,7 +50,13 @@
           <button class="icon-button" id="notificationsButton" aria-label="Notifications">♢<span class="dot"></span></button>
         </div>
       </header>
-      <div class="security-banner" id="securityBanner" hidden><strong>HTTPS required for hosting</strong><span>This address can view sessions, but browsers only allow screen sharing from HTTPS or localhost.</span></div>
+      <div class="security-banner" id="securityBanner" hidden>
+        <div class="banner-text">
+          <strong>🔒 Local Network Notice (HTTP):</strong>
+          <span>Dev Shell & remote control are active. To enable screen video sharing across LAN devices, HTTPS or Chrome local IP flag is needed.</span>
+        </div>
+        <button type="button" class="banner-action-btn" id="openSecGuideBtn">Screen Sharing Setup ↗</button>
+      </div>
 
       <!-- Regular Remote View -->
       <div id="remoteView">
@@ -158,6 +164,58 @@
       <div class="approval-actions"><button class="cancel-button" id="rejectViewer">Decline</button><button class="connect-button" id="acceptViewer">Allow viewing</button></div>
     </div>
   </div>
+
+  <!-- Security & Screen Capture Setup Guide Modal -->
+  <div class="modal-backdrop" id="secGuideModal" hidden>
+    <div class="modal guide-modal" role="dialog" aria-modal="true" aria-labelledby="secGuideTitle">
+      <div class="modal-header">
+        <span class="guide-icon">🔒</span>
+        <div>
+          <h2 id="secGuideTitle">Screen Video on Local Network</h2>
+          <small>How to enable display streaming across Wi-Fi / LAN</small>
+        </div>
+        <button id="closeSecGuideBtn" class="drawer-close-btn">&times;</button>
+      </div>
+      <div class="guide-content">
+        <p>Browsers (Chrome, Edge, Safari) protect screen capture by restricting <code>getDisplayMedia</code> to <strong>Secure Contexts</strong> (<code>localhost</code> or <code>https://</code>). To stream screen video across LAN devices, choose any option below:</p>
+        
+        <div class="guide-step">
+          <span class="step-num">1</span>
+          <div>
+            <strong>Option A: Run SwiftView with HTTPS (Recommended)</strong>
+            <p>Restart server with HTTPS to enable automatic TLS on LAN:</p>
+            <pre class="guide-code">npm run start:https</pre>
+            <small>Then open <code>https://&lt;your-local-ip&gt;:4173</code> on your phone/laptop and accept the local self-signed certificate.</small>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <span class="step-num">2</span>
+          <div>
+            <strong>Option B: Chrome / Edge Developer Flag (10 seconds)</strong>
+            <p>Tell Chrome to treat this LAN address as secure for screen sharing:</p>
+            <ol class="guide-list">
+              <li>Open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code></li>
+              <li>Paste this origin: <code id="guideLanUrl">http://localhost:4173</code></li>
+              <li>Select <strong>Enabled</strong> and click <strong>Relaunch</strong>.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <span class="step-num">3</span>
+          <div>
+            <strong>Option C: Zero-Install Dev Shell & Remote Admin</strong>
+            <p>You can connect right now! Remote terminal, system telemetry, commands, and AI copilot work directly over HTTP without any setup.</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="connect-button" id="secGuideOkBtn">Got it</button>
+      </div>
+    </div>
+  </div>
+
   <div class="drawer-backdrop" id="drawer" hidden>
     <aside class="drawer" aria-labelledby="drawerTitle">
       <div class="drawer-header"><div><p class="eyebrow" id="drawerEyebrow">SWIFTVIEW</p><h2 id="drawerTitle">Details</h2></div><button id="drawerClose" aria-label="Close panel">&times;</button></div>
@@ -191,6 +249,7 @@
           <span class="telemetry-chip ready" id="dcChip" title="RTCDataChannel status">Channel: <b>Ready</b></span>
         </div>
         <button id="dirtyRectToggle" class="chip-toggle active" title="Toggle Dirty Rectangle Tile Diffing">▦ Dirty Rects: <b id="dirtyStatus">ON</b></button>
+        <button id="broadcastScreenBtn" class="chip-toggle" title="Broadcast Screen Display" hidden>📺 Share Screen</button>
         <span id="sessionCode"></span>
         <button id="fullscreenButton" title="Fullscreen">⛶</button>
         <button class="end-button" id="endSession">End session</button>
@@ -210,6 +269,7 @@
           <div class="radar"><span></span><span></span><i>↗</i></div>
           <h2 id="waitingTitle">Ready to connect</h2>
           <p id="waitingText">Share your SwiftView ID with the other device.</p>
+          <button type="button" id="waitingToShellBtn" class="row-connect" style="margin-top:14px;display:none;">Open Dev Shell 💻</button>
         </div>
       </div>
 
