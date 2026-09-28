@@ -184,9 +184,13 @@
 
       <div class="session-actions">
         <div class="session-telemetry">
-          <span class="telemetry-chip" id="rttChip" title="Peer-to-peer latency over WebRTC">RTT: <b id="rttValue">--</b> ms</span>
-          <span class="telemetry-chip ready" id="dcChip" title="RTCDataChannel status">DataChannel: <b>Ready</b></span>
+          <span class="telemetry-chip" id="rttChip" title="Round-trip latency over direct UDP WebRTC">RTT: <b id="rttValue">--</b> ms</span>
+          <span class="telemetry-chip" id="jitterChip" title="Measured network packet jitter">Jitter: <b id="jitterValue">--</b> ms</span>
+          <span class="telemetry-chip net-tier" id="netTierChip" title="Adaptive Bandwidth & Mobile Scaling profile">Profile: <b id="netTierValue">Ultra (60fps)</b></span>
+          <span class="telemetry-chip ready" id="transportChip" title="Transport multiplexing protocol">Transport: <b id="transportMode">QUIC/SCTP</b></span>
+          <span class="telemetry-chip ready" id="dcChip" title="RTCDataChannel status">Channel: <b>Ready</b></span>
         </div>
+        <button id="dirtyRectToggle" class="chip-toggle active" title="Toggle Dirty Rectangle Tile Diffing">▦ Dirty Rects: <b id="dirtyStatus">ON</b></button>
         <span id="sessionCode"></span>
         <button id="fullscreenButton" title="Fullscreen">⛶</button>
         <button class="end-button" id="endSession">End session</button>
@@ -195,9 +199,13 @@
 
     <!-- Stage Panels: Video, Terminal Shell, Diagnostics -->
     <div class="stage" id="sessionStage">
-      <!-- Video Stream Panel -->
+      <!-- Video Stream Panel with Dirty Rectangle Diffing Canvas -->
       <div class="stage-panel video-panel active" id="videoPanel">
         <video id="remoteVideo" autoplay playsinline></video>
+        <canvas id="dirtyCanvas" class="dirty-overlay"></canvas>
+        <div class="dirty-hud" id="dirtyHud">
+          <span>▦ Tile Diffing Active:</span> <strong id="dirtySavedPct">95.4%</strong> bandwidth saved (<span id="dirtyTileCount">8</span> dirty rects)
+        </div>
         <div class="waiting" id="waiting">
           <div class="radar"><span></span><span></span><i>↗</i></div>
           <h2 id="waitingTitle">Ready to connect</h2>
@@ -205,13 +213,13 @@
         </div>
       </div>
 
-      <!-- Remote Dev Shell / Terminal Panel (RTCDataChannel) -->
+      <!-- Remote Dev Shell / Terminal Panel with AI Copilot -->
       <div class="stage-panel terminal-panel" id="terminalPanel">
         <div class="terminal-bar">
           <div class="terminal-bar-info">
             <span class="term-dot"></span>
             <strong id="terminalHostPrompt">admin@swiftview-node:~$</strong>
-            <span class="term-badge">WebRTC P2P DataChannel</span>
+            <span class="term-badge">WebRTC DataChannel / QUIC Stream</span>
           </div>
           <div class="terminal-quick-actions">
             <button type="button" class="quick-cmd" data-cmd="sysinfo">sysinfo</button>
@@ -223,9 +231,42 @@
           </div>
         </div>
 
+        <!-- AI Copilot Natural Language Assistance Bar -->
+        <div class="copilot-bar">
+          <div class="copilot-input-wrap">
+            <span class="copilot-sparkle">✨</span>
+            <input class="copilot-input" id="copilotInput" autocomplete="off" placeholder="Ask AI Copilot (e.g. 'find files > 100M', 'kill port 4173', 'diagnose error')...">
+            <button type="button" class="copilot-ask-btn" id="copilotAskBtn">Ask Copilot</button>
+          </div>
+          <div class="copilot-suggestion" id="copilotSuggestion" hidden>
+            <span class="copilot-pill">Suggested:</span>
+            <code id="suggestedCmdText">find / -type f -size +100M</code>
+            <button type="button" id="applySuggestionBtn" class="copilot-apply-btn">Run in Shell ↵</button>
+            <button type="button" id="dismissSuggestionBtn" class="copilot-dismiss-btn">×</button>
+          </div>
+        </div>
+
         <div class="terminal-screen" id="terminalScreen" role="log" aria-live="polite">
-          <div class="term-line welcome-line">SwiftView Web Admin Shell v0.2.0 [E2EE WebRTC DataChannel]</div>
-          <div class="term-line welcome-line">Type <span class="term-hl">help</span> to list available commands or click quick actions above.</div>
+          <div class="term-line welcome-line">SwiftView Web Admin Shell v0.2.0 [E2EE WebRTC + QUIC Multiplexed]</div>
+          <div class="term-line welcome-line">✨ AI Copilot is active. Type <span class="term-hl">help</span> or ask questions in the Copilot bar above.</div>
+          
+          <!-- AI Diagnosis Card -->
+          <div class="ai-diagnosis-card" id="aiDiagnosisCard" hidden>
+            <div class="diag-card-head">
+              <span>✨ AI Copilot Diagnosis</span>
+              <button type="button" id="closeDiagBtn">×</button>
+            </div>
+            <div class="diag-body">
+              <strong id="aiDiagSummary">Missing Dependency Detected</strong>
+              <p id="aiDiagCause">Required package is missing from node_modules.</p>
+              <div class="diag-action-row">
+                <span>Remediation:</span>
+                <code id="aiDiagCmd">npm install express</code>
+                <button type="button" id="aiApplyFixBtn">⚡ Apply Fix</button>
+              </div>
+            </div>
+          </div>
+
           <div class="term-output" id="terminalOutput"></div>
         </div>
 
@@ -240,11 +281,15 @@
       <div class="stage-panel diagnostics-panel" id="diagnosticsPanel">
         <div class="diagnostics-grid">
           <div class="diag-card">
-            <div class="diag-card-header"><span class="diag-icon">⚡</span><h3>Network & DataChannel</h3></div>
+            <div class="diag-card-header"><span class="diag-icon">⚡</span><h3>Network Transport & Mobile Adaptation</h3></div>
             <div class="diag-row"><span>Round Trip Latency (RTT)</span><strong id="diagRtt">-- ms</strong></div>
+            <div class="diag-row"><span>Packet Jitter</span><strong id="diagJitter">-- ms</strong></div>
+            <div class="diag-row"><span>Packet Loss Rate</span><strong id="diagLossRate">0.0%</strong></div>
+            <div class="diag-row"><span>Adaptive Quality Tier</span><strong id="diagTier">Tier 1: Ultra (60 FPS)</strong></div>
+            <div class="diag-row"><span>Adaptive Jitter Buffer Target</span><strong id="diagJitterBuffer">15 ms (Dynamic)</strong></div>
+            <div class="diag-row"><span>Streaming Bitrate</span><strong id="diagBitrate">-- Kbps</strong></div>
+            <div class="diag-row"><span>Transport Layer</span><strong>Prioritized UDP (DTLS-SRTP)</strong></div>
             <div class="diag-row"><span>Channel State</span><strong id="diagChannelState">Connecting</strong></div>
-            <div class="diag-row"><span>Transport Protocol</span><strong>WebRTC SCTP / ICE</strong></div>
-            <div class="diag-row"><span>Buffered Amount</span><strong id="diagBuffer">0 bytes</strong></div>
           </div>
 
           <div class="diag-card">

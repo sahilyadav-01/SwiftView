@@ -46,6 +46,9 @@
 .telemetry-chip{font-size:10px;color:var(--muted);background:#131620;border:1px solid #272d3d;padding:4px 9px;border-radius:6px;display:flex;align-items:center;gap:4px}
 .telemetry-chip b{color:var(--green);font-weight:700}
 .telemetry-chip.ready b{color:#64b5f6}
+.telemetry-chip.net-tier b{color:#44d19b}
+.telemetry-chip.net-tier.tier-balanced b{color:#ffd394}
+.telemetry-chip.net-tier.tier-edge b{color:#ff775f}
 
 /* Stage Panels */
 .stage{position:relative;width:100%;height:100%;overflow:hidden;background:#05070c}
@@ -106,3 +109,45 @@
   .session-modes .mode-tab span{display:none}
   .session-telemetry{display:none}
 }
+
+/* Dirty Rectangle Canvas & HUD */
+.chip-toggle{background:#1a2130;border:1px solid #293448;color:var(--muted);font-size:10px;font-weight:700;padding:4px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:.15s}
+.chip-toggle:hover{border-color:var(--accent);color:#fff}
+.chip-toggle.active{background:rgba(68,209,155,.12);border-color:rgba(68,209,155,.35);color:var(--green)}
+.chip-toggle.active b{color:var(--green)}
+.dirty-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+.dirty-hud{position:absolute;bottom:14px;left:18px;background:rgba(8,11,18,.85);border:1px solid rgba(68,209,155,.3);backdrop-filter:blur(8px);border-radius:8px;padding:6px 14px;font-size:11px;color:#a8b4c7;z-index:3;display:flex;align-items:center;gap:6px;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.dirty-hud span:first-child{color:var(--green);font-weight:700}
+.dirty-hud strong{color:#44d19b}
+
+/* AI Copilot Bar */
+.copilot-bar{background:#0e1320;border-bottom:1px solid #1f2738;padding:10px 16px;display:flex;flex-direction:column;gap:8px}
+.copilot-input-wrap{display:flex;align-items:center;gap:10px;background:#090d16;border:1px solid #232c40;border-radius:8px;padding:4px 12px;transition:.2s}
+.copilot-input-wrap:focus-within{border-color:#ff9277;box-shadow:0 0 0 2px rgba(255,101,77,.15)}
+.copilot-sparkle{font-size:14px;color:#ff9277}
+.copilot-input{flex:1;background:transparent;border:0;outline:0;color:#fff;font-family:inherit;font-size:12px}
+.copilot-input::placeholder{color:#546078;font-size:11px}
+.copilot-ask-btn{background:linear-gradient(135deg,#ff654d,#ff8b74);border:0;color:#fff;font-size:10px;font-weight:700;padding:5px 12px;border-radius:6px;cursor:pointer;transition:.15s}
+.copilot-ask-btn:hover{filter:brightness(1.1)}
+.copilot-suggestion{display:flex;align-items:center;gap:10px;background:rgba(255,101,77,.08);border:1px solid rgba(255,101,77,.25);border-radius:7px;padding:6px 12px;font-size:11px}
+.copilot-pill{color:#ff9277;font-weight:700;font-size:10px}
+.copilot-suggestion code{font-family:inherit;color:#fff;background:rgba(0,0,0,.3);padding:2px 7px;border-radius:4px;flex:1}
+.copilot-apply-btn{background:#ff654d;border:0;color:#fff;font-size:10px;font-weight:700;padding:4px 10px;border-radius:5px;cursor:pointer}
+.copilot-dismiss-btn{background:none;border:0;color:var(--muted);font-size:14px;cursor:pointer;padding:0 4px}
+
+/* AI Diagnosis Card */
+.ai-diagnosis-card{background:linear-gradient(145deg,#121624,#0c101a);border:1px solid rgba(255,101,77,.35);border-radius:10px;padding:14px 18px;margin:10px 0;box-shadow:0 8px 30px rgba(0,0,0,.5);animation:fadeIn .25s ease}
+.diag-card-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,.06);padding-bottom:8px;margin-bottom:10px}
+.diag-card-head span{color:#ff9277;font-size:11px;font-weight:700}
+.diag-card-head button{background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer}
+.diag-body{display:flex;flex-direction:column;gap:6px}
+.diag-body strong{color:#fff;font-size:12px}
+.diag-body p{margin:0;font-size:11px;color:#9ca7ba;line-height:1.5}
+.diag-action-row{display:flex;align-items:center;gap:10px;background:#060810;border:1px solid #232b3d;border-radius:6px;padding:6px 12px;margin-top:6px}
+.diag-action-row span{font-size:10px;color:var(--muted)}
+.diag-action-row code{font-family:inherit;color:#44d19b;flex:1;font-size:11px}
+.diag-action-row button{background:var(--accent);border:0;color:#fff;font-size:10px;font-weight:700;padding:5px 12px;border-radius:5px;cursor:pointer;transition:.15s}
+.diag-action-row button:hover{background:#ff775f}
+.term-diagnose-btn{margin-left:10px;background:rgba(255,101,77,.18);border:1px solid rgba(255,101,77,.4);color:#ff9277;font-family:inherit;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer}
+.term-diagnose-btn:hover{background:rgba(255,101,77,.35);color:#fff}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}

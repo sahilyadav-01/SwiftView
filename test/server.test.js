@@ -94,3 +94,23 @@ test('tracks fleet nodes and reports via /api/fleet', async () => {
 
   host.close();
 });
+
+test('reports WebTransport and QUIC capabilities via /api/transport', async () => {
+  const response = await fetch(`${baseUrl}/api/transport`);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.quicSupported, true);
+  assert.ok(data.protocols.includes('webtransport-quic'));
+});
+
+test('diagnoses stack traces with AI Copilot endpoint', async () => {
+  const response = await fetch(`${baseUrl}/api/copilot/diagnose`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ log: "Error: Cannot find module 'express'" })
+  });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.errorType, 'NodeModuleNotFound');
+  assert.match(data.suggestedCommand, /npm install express/);
+});

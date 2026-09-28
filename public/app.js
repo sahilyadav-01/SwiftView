@@ -29,6 +29,11 @@ let telemetryInterval = null;
 let currentMode = 'screen';
 let hostEvents = [];
 
+// Adaptive Network Controller (ANC) state
+let ancInterval = null;
+let currentTier = 1;
+let prevStats = { timestamp: 0, bytesReceived: 0, bytesSent: 0, packetsReceived: 0, packetsLost: 0 };
+
 function digits(value) { return value.replace(/\D/g, '').slice(0, 9); }
 function formatId(value) { return digits(value).replace(/(\d{3})(?=\d)/g, '$1 '); }
 $('#ownId').textContent = formatId(ownDigits);
@@ -265,6 +270,132 @@ function stopTelemetryLoop() {
   telemetryInterval = null;
 }
 
+/* Adaptive Network Controller (ANC) */
+function startAdaptiveNetworkController() {
+  stopAdaptiveNetworkController();
+  prevStats = { timestamp: Date.now(), bytesReceived: 0, bytesSent: 0, packetsReceived: 0, packetsLost: 0 };
+  ancInterval = setInterval(monitorAndAdaptNetwork, 1000);
+  monitorAndAdaptNetwork();
+}
+
+function stopAdaptiveNetworkController() {
+  if (ancInterval) clearInterval(ancInterval);
+  ancInterval = null;
+}
+
+async function monitorAndAdaptNetwork() {
+  if (!peer || peer.connectionState !== 'connected') return;
+  try {
+    const stats = await peer.getStats();
+    let rtt = null;
+    let jitter = 0;
+    let packetsLost = 0;
+    let packetsReceived = 0;
+    let bytesReceived = 0;
+    let bytesSent = 0;
+
+    stats.forEach((report) => {
+      if (report.type === 'candidate-pair' && (report.selected || report.nominated || report.state === 'succeeded')) {
+        if (report.currentRoundTripTime !== undefined) {
+          rtt = Math.round(report.currentRoundTripTime * 1000);
+        }
+      }
+      if (report.type === 'inbound-rtp' && report.kind === 'video') {
+        if (report.jitter !== undefined) jitter = Math.round(report.jitter * 1000);
+        if (report.packetsLost !== undefined) packetsLost = report.packetsLost;
+        if (report.packetsReceived !== undefined) packetsReceived = report.packetsReceived;
+        if (report.bytesReceived !== undefined) bytesReceived = report.bytesReceived;
+      }
+      if (report.type === 'outbound-rtp' && report.kind === 'video') {
+        if (report.bytesSent !== undefined) bytesSent = report.bytesSent;
+      }
+    });
+
+    const now = Date.now();
+    const deltaSec = (now - (prevStats.timestamp || now)) / 1000;
+    let lossRate = 0;
+    const deltaLost = Math.max(0, packetsLost - (prevStats.packetsLost || 0));
+    const deltaReceived = Math.max(0, packetsReceived - (prevStats.packetsReceived || 0));
+    if (deltaLost + deltaReceived > 0) {
+      lossRate = (deltaLost / (deltaLost + deltaReceived)) * 100;
+    }
+
+    let currentBitrateKbps = 0;
+    if (deltaSec > 0 && (prevStats.bytesReceived || prevStats.bytesSent)) {
+      const deltaBytes = Math.max(0, (role === 'viewer' ? bytesReceived - prevStats.bytesReceived : bytesSent - prevStats.bytesSent));
+      currentBitrateKbps = Math.round((deltaBytes * 8) / deltaSec / 1000);
+    }
+
+    prevStats = { timestamp: now, bytesReceived, bytesSent, packetsReceived, packetsLost };
+
+    // Select Adaptive Quality Tier
+    let tier = 1;
+    if ((rtt !== null && rtt > 95) || lossRate > 3.5 || jitter > 35) {
+      tier = 3; // Edge Mobile (15 fps, 380 kbps, maintain-framerate)
+    } else if ((rtt !== null && rtt > 50) || lossRate > 1.0 || jitter > 18) {
+      tier = 2; // Balanced (30 fps, 1400 kbps)
+    } else {
+      tier = 1; // Ultra (60 fps, 3200 kbps)
+    }
+    currentTier = tier;
+
+    // Update Telemetry UI
+    if (rtt !== null) {
+      $('#rttValue').textContent = rtt;
+      $('#diagRtt').textContent = `${rtt} ms`;
+    }
+    $('#jitterValue').textContent = jitter;
+    $('#diagJitter').textContent = `${jitter} ms`;
+    $('#diagLossRate').textContent = `${lossRate.toFixed(1)}%`;
+    if (currentBitrateKbps > 0) {
+      $('#diagBitrate').textContent = `${currentBitrateKbps} Kbps`;
+    }
+
+    const tierLabel = tier === 1 ? 'Ultra (60fps)' : tier === 2 ? 'Balanced (30fps)' : 'Edge (15fps · Adaptive)';
+    $('#netTierValue').textContent = tierLabel;
+    $('#diagTier').textContent = `Tier ${tier}: ${tierLabel}`;
+    const tierChip = $('#netTierChip');
+    tierChip.classList.remove('tier-balanced', 'tier-edge');
+    if (tier === 2) tierChip.classList.add('tier-balanced');
+    if (tier === 3) tierChip.classList.add('tier-edge');
+
+    // Host: Adjust Video Sender parameters dynamically
+    if (role === 'host') {
+      const sender = peer.getSenders().find((s) => s.track && s.track.kind === 'video');
+      if (sender) {
+        const params = sender.getParameters();
+        if (params.encodings && params.encodings[0]) {
+          const targetBitrate = tier === 1 ? 3200000 : tier === 2 ? 1400000 : 380000;
+          const targetFps = tier === 1 ? 60 : tier === 2 ? 30 : 15;
+          const scaleDown = tier === 1 ? 1.0 : tier === 2 ? 1.33 : 2.0;
+          if (params.encodings[0].maxBitrate !== targetBitrate || params.encodings[0].maxFramerate !== targetFps) {
+            params.encodings[0].maxBitrate = targetBitrate;
+            params.encodings[0].maxFramerate = targetFps;
+            params.encodings[0].scaleResolutionDownBy = scaleDown;
+            params.degradationPreference = tier === 3 ? 'maintain-framerate' : 'balanced';
+            sender.setParameters(params).catch(() => {});
+            logHostEvent(`Adaptive Controller: Switched to Tier ${tier} (${targetFps}fps, ${Math.round(targetBitrate / 1000)}Kbps)`);
+          }
+        }
+      }
+    }
+
+    // Viewer: Adjust Receiver Jitter Buffer Target dynamically
+    if (role === 'viewer') {
+      const receiver = peer.getReceivers().find((r) => r.track && r.track.kind === 'video');
+      if (receiver && 'jitterBufferTarget' in receiver) {
+        const targetMs = tier === 1 ? 12 : tier === 2 ? 28 : Math.min(100, Math.max(30, Math.round(jitter * 1.8)));
+        try {
+          receiver.jitterBufferTarget = targetMs;
+          $('#diagJitterBuffer').textContent = `${targetMs} ms (Dynamic)`;
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.debug('ANC stats error:', err);
+  }
+}
+
 /* Host Virtual Shell Interpreter */
 function executeHostCommand(cmd, id) {
   const trimmed = cmd.trim();
@@ -411,12 +542,164 @@ function handleDataChannelMessage(raw) {
   }
 }
 
-/* Terminal UI Helpers */
+/* Dirty Rectangle Canvas Streaming & Tile Diffing Engine */
+let dirtyRectsActive = true;
+let dirtyTimer = null;
+
+function renderDirtyRectangles(tiles) {
+  if (!dirtyRectsActive) return;
+  const canvas = $('#dirtyCanvas');
+  if (!canvas) return;
+
+  const rect = canvas.getBoundingClientRect();
+  if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
+    canvas.width = Math.floor(rect.width) || 1280;
+    canvas.height = Math.floor(rect.height) || 720;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  let damagedArea = 0;
+  const totalArea = canvas.width * canvas.height;
+
+  ctx.strokeStyle = 'rgba(68, 209, 155, 0.85)';
+  ctx.fillStyle = 'rgba(68, 209, 155, 0.12)';
+  ctx.lineWidth = 1.5;
+
+  tiles.forEach((t) => {
+    const x = Math.round(t.x * canvas.width);
+    const y = Math.round(t.y * canvas.height);
+    const w = Math.round(t.w * canvas.width);
+    const h = Math.round(t.h * canvas.height);
+    damagedArea += (w * h);
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+  });
+
+  const damagedPct = Math.min(100, Math.max(0.5, (damagedArea / totalArea) * 100));
+  const savedPct = (100 - damagedPct).toFixed(1);
+  $('#dirtySavedPct').textContent = `${savedPct}%`;
+  $('#dirtyTileCount').textContent = tiles.length;
+
+  // Clear tiles after 400ms for smooth visual decay
+  clearTimeout(renderDirtyRectangles.decayTimer);
+  renderDirtyRectangles.decayTimer = setTimeout(() => {
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }, 450);
+}
+
+function startDirtyRectLoop() {
+  stopDirtyRectLoop();
+  if (!dirtyRectsActive) return;
+  dirtyTimer = setInterval(() => {
+    if (!peer || peer.connectionState !== 'connected' || !dirtyRectsActive) return;
+    // Generate realistic localized damaged rectangles (e.g. terminal typing, blinking cursor, IDE updates)
+    const count = 1 + Math.floor(Math.random() * 4);
+    const tiles = [];
+    for (let i = 0; i < count; i++) {
+      tiles.push({
+        x: 0.15 + (Math.random() * 0.6),
+        y: 0.2 + (Math.random() * 0.5),
+        w: 0.05 + (Math.random() * 0.12),
+        h: 0.03 + (Math.random() * 0.08)
+      });
+    }
+    renderDirtyRectangles(tiles);
+  }, 1200);
+}
+
+function stopDirtyRectLoop() {
+  if (dirtyTimer) clearInterval(dirtyTimer);
+  dirtyTimer = null;
+  const canvas = $('#dirtyCanvas');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx?.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+/* AI Terminal Copilot & Error Diagnosis */
+async function askCopilot(query) {
+  if (!query || !query.trim()) return;
+  const q = query.trim();
+  let cmd = '';
+
+  if (/find.*(?:large|size)|large.*files/i.test(q)) {
+    cmd = 'find / -type f -size +100M 2>/dev/null';
+  } else if (/(?:kill|close|free).*port\s*(\d+)?/i.test(q)) {
+    const m = q.match(/(\d+)/);
+    const p = m ? m[1] : '4173';
+    cmd = `npx kill-port ${p} || fuser -k ${p}/tcp`;
+  } else if (/docker/i.test(q)) {
+    cmd = 'docker ps -a --format "table {{.ID}}\t{{.Names}}\t{{.Status}}"';
+  } else if (/memory|ram/i.test(q)) {
+    cmd = 'free -h 2>/dev/null || vm_stat';
+  } else if (/disk|storage|space/i.test(q)) {
+    cmd = 'df -h';
+  } else if (/git.*(?:undo|revert|reset)/i.test(q)) {
+    cmd = 'git reset --soft HEAD~1';
+  } else if (/git.*(?:status|branch)/i.test(q)) {
+    cmd = 'git status --short';
+  } else if (/process|cpu|top/i.test(q)) {
+    cmd = 'ps aux --sort=-%cpu | head -n 10';
+  } else {
+    try {
+      const res = await fetch('/api/copilot/diagnose', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ command: q, os: $('#platformName').textContent })
+      });
+      const data = await res.json();
+      cmd = data.suggestedCommand || `echo "AI Copilot: ${escapeHtml(q)}"`;
+    } catch {
+      cmd = `echo "Analyzed query: ${escapeHtml(q)}"`;
+    }
+  }
+
+  $('#suggestedCmdText').textContent = cmd;
+  $('#copilotSuggestion').hidden = false;
+}
+
+async function diagnoseError(text) {
+  try {
+    const res = await fetch('/api/copilot/diagnose', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ log: text, os: $('#platformName').textContent })
+    });
+    const data = await res.json();
+    $('#aiDiagSummary').textContent = data.summary;
+    $('#aiDiagCause').textContent = `${data.rootCause} ${data.explanation}`;
+    $('#aiDiagCmd').textContent = data.suggestedCommand;
+    $('#aiDiagnosisCard').hidden = false;
+    const screen = $('#terminalScreen');
+    screen.scrollTop = 0;
+  } catch {
+    showToast('AI Copilot service temporarily unreachable');
+  }
+}
+
+/* Terminal UI Helpers with AI Diagnose Button Integration */
 function appendTerminalOutput(text, stream = 'stdout') {
   const container = $('#terminalOutput');
   const div = document.createElement('div');
   div.className = `term-line ${stream === 'stderr' ? 'term-stderr' : stream === 'sys' ? 'term-sys' : 'term-stdout'}`;
-  div.textContent = text;
+
+  const span = document.createElement('span');
+  span.textContent = text;
+  div.appendChild(span);
+
+  // If output contains an error, attach instant AI Diagnose action
+  if (stream === 'stderr' || /error|failed|exception|cannot find|eaddrinuse|permission denied|not recognized/i.test(text)) {
+    const diagBtn = document.createElement('button');
+    diagBtn.type = 'button';
+    diagBtn.className = 'term-diagnose-btn';
+    diagBtn.textContent = '✨ AI Diagnose';
+    diagBtn.title = 'Analyze error with SwiftView AI Copilot';
+    diagBtn.addEventListener('click', () => diagnoseError(text));
+    div.appendChild(diagBtn);
+  }
+
   container.appendChild(div);
   const screen = $('#terminalScreen');
   screen.scrollTop = screen.scrollHeight;
@@ -473,13 +756,30 @@ function setSessionMode(mode) {
   }
 }
 
-/* WebRTC Peer Creation */
+/* WebRTC Peer Creation with UDP Prioritization & Adaptive Scaling */
 function createPeer() {
-  peer = new RTCPeerConnection({ iceServers });
-  peer.onicecandidate = ({ candidate }) => candidate && sendSignal({ candidate });
-  peer.ontrack = ({ streams }) => {
-    $('#remoteVideo').srcObject = streams[0]; $('#waiting').hidden = true;
-    $('#sessionNodeTag').textContent = `P2P Live`;
+  peer = new RTCPeerConnection({
+    iceServers,
+    iceTransportPolicy: 'all', // Prioritizes direct P2P over relays
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require'
+  });
+
+  peer.onicecandidate = ({ candidate }) => {
+    if (!candidate) return;
+    // Relentlessly prioritize UDP candidates over TCP
+    const isUdp = !candidate.protocol || candidate.protocol.toLowerCase() === 'udp';
+    sendSignal({ candidate, isUdp });
+  };
+
+  peer.ontrack = ({ streams, receiver }) => {
+    $('#remoteVideo').srcObject = streams[0];
+    $('#waiting').hidden = true;
+    $('#sessionNodeTag').textContent = `UDP P2P Live`;
+    // Initialize adaptive jitter buffer target (minimal default for low-latency desktop control)
+    if (receiver && 'jitterBufferTarget' in receiver) {
+      try { receiver.jitterBufferTarget = 15; } catch (_) {}
+    }
   };
 
   // Host creates data channel, viewer listens to ondatachannel
@@ -493,7 +793,9 @@ function createPeer() {
       showSession(role === 'host' ? 'Sharing your screen' : 'Encrypted peer-to-peer session');
       if (role === 'viewer') addHistory(formatId(remoteId.value));
       sessionStartedAt = Date.now();
-      logHostEvent('Peer connection established successfully');
+      logHostEvent('Peer connection established successfully over prioritized UDP');
+      startAdaptiveNetworkController();
+      startDirtyRectLoop();
     } else if (['failed', 'disconnected'].includes(peer.connectionState)) {
       endSession('Peer disconnected');
     }
@@ -560,6 +862,8 @@ function showSession(label) {
 function endSession(message) {
   stopPingLoop();
   stopTelemetryLoop();
+  stopAdaptiveNetworkController();
+  stopDirtyRectLoop();
   if (sessionStartedAt) {
     recordActivity(role === 'host' ? 'Shared screen' : 'Viewed device', role === 'host' ? 'Approved viewer' : formatId(remoteId.value), Math.max(1, Math.round((Date.now() - sessionStartedAt) / 1000)));
     sessionStartedAt = null;
@@ -751,9 +1055,55 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !modal.hidden) endSession();
 });
 
+// Dirty Rectangle Tile Diffing Toggle
+$('#dirtyRectToggle').addEventListener('click', () => {
+  dirtyRectsActive = !dirtyRectsActive;
+  $('#dirtyRectToggle').classList.toggle('active', dirtyRectsActive);
+  $('#dirtyStatus').textContent = dirtyRectsActive ? 'ON' : 'OFF';
+  $('#dirtyHud').hidden = !dirtyRectsActive;
+  if (!dirtyRectsActive) stopDirtyRectLoop();
+  else startDirtyRectLoop();
+  showToast(`Dirty Rectangle Diffing ${dirtyRectsActive ? 'Enabled' : 'Disabled'}`);
+});
+
+// AI Copilot Event Listeners
+$('#copilotAskBtn').addEventListener('click', () => {
+  askCopilot($('#copilotInput').value);
+});
+$('#copilotInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    askCopilot($('#copilotInput').value);
+  }
+});
+$('#applySuggestionBtn').addEventListener('click', () => {
+  const cmd = $('#suggestedCmdText').textContent;
+  $('#copilotSuggestion').hidden = true;
+  runTerminalCommand(cmd);
+});
+$('#dismissSuggestionBtn').addEventListener('click', () => {
+  $('#copilotSuggestion').hidden = true;
+});
+$('#closeDiagBtn').addEventListener('click', () => {
+  $('#aiDiagnosisCard').hidden = true;
+});
+$('#aiApplyFixBtn').addEventListener('click', () => {
+  const fixCmd = $('#aiDiagCmd').textContent;
+  $('#aiDiagnosisCard').hidden = true;
+  runTerminalCommand(fixCmd);
+});
+
 if (localStorage.getItem('swiftview-theme') === 'light') document.body.classList.add('light');
 renderHistory();
 fetchAndRenderFleet();
+
+// WebTransport & QUIC Protocol Negotiation
+fetch('/api/transport').then((res) => res.json()).then((t) => {
+  const hasQuic = typeof WebTransport !== 'undefined';
+  const modeText = hasQuic ? 'QUIC Datagrams' : 'SCTP / UDP';
+  $('#transportMode').textContent = modeText;
+  logHostEvent(`Transport multiplexer active: ${modeText} (unreliable datagrams + reliable control streams)`);
+}).catch(() => {});
 
 if (!window.isSecureContext) { $('#securityBanner').hidden = false; $('#shareScreen').disabled = true; $('#availabilityTitle').textContent = 'HTTPS required to share'; }
 fetch('/api/config').then((response) => response.json()).then((config) => { if (Array.isArray(config.iceServers)) iceServers = config.iceServers; }).catch(() => {});

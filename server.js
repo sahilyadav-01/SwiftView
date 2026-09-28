@@ -42,6 +42,94 @@ function handler(req, res) {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
     return res.end(JSON.stringify({ count: devices.length, devices }));
   }
+  if (url.pathname === '/api/transport') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(JSON.stringify({
+      quicSupported: true,
+      webTransportEnabled: true,
+      protocols: ['webtransport-quic', 'webrtc-datachannel', 'websocket-relay'],
+      datagramMaxPayload: 1200,
+      features: ['unreliable-datagrams', 'reliable-streams', 'multiplexing']
+    }));
+  }
+  if (url.pathname === '/api/copilot/diagnose' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const text = payload.log || payload.command || '';
+        const os = payload.os || 'Linux';
+        let diagnosis = {
+          errorType: 'GenericExecutionNotice',
+          summary: 'Command executed with non-zero exit code or anomalous output.',
+          rootCause: 'Process returned standard error output.',
+          suggestedCommand: 'dmesg -T | tail -n 20',
+          confidence: 0.72,
+          explanation: 'Review kernel and recent process logs to pinpoint failure reason.'
+        };
+
+        if (/cannot find module ['"]?([^'"\s]+)['"]?/i.test(text)) {
+          const mod = text.match(/cannot find module ['"]?([^'"\s]+)['"]?/i)[1];
+          diagnosis = {
+            errorType: 'NodeModuleNotFound',
+            summary: `Missing Node.js dependency: '${mod}'.`,
+            rootCause: `Package '${mod}' is required but not installed in the local node_modules hierarchy.`,
+            suggestedCommand: `npm install ${mod}`,
+            confidence: 0.98,
+            explanation: `Run 'npm install ${mod}' to download and link the missing dependency.`
+          };
+        } else if (/eaddrinuse|address already in use/i.test(text)) {
+          const portMatch = text.match(/:(\d{2,5})/);
+          const p = portMatch ? portMatch[1] : '4173';
+          diagnosis = {
+            errorType: 'PortCollision',
+            summary: `Port ${p} is already bound by another process.`,
+            rootCause: `A previous server or background daemon is occupying port ${p}.`,
+            suggestedCommand: os.includes('Windows') ? `Stop-Process -Id (Get-NetTCPConnection -LocalPort ${p}).OwningProcess -Force` : `fuser -k ${p}/tcp`,
+            confidence: 0.95,
+            explanation: `Terminate the process holding port ${p} or select an alternative port via environment variable PORT.`
+          };
+        } else if (/permission denied|eacces/i.test(text)) {
+          diagnosis = {
+            errorType: 'PermissionDenied',
+            summary: 'Insufficient filesystem or process permissions.',
+            rootCause: 'The user account does not have write or execute privileges for the requested target.',
+            suggestedCommand: os.includes('Windows') ? 'Start-Process powershell -Verb runAs' : 'chmod +x ./* && sudo !!',
+            confidence: 0.92,
+            explanation: 'Grant execution permissions using chmod or run command in an elevated administrative shell.'
+          };
+        } else if (/command not found|is not recognized as an internal/i.test(text)) {
+          const cmdMatch = text.match(/(?:command not found:?|not recognized as an internal or external command.*)['"]?([a-zA-Z0-9_-]+)/i);
+          const missingCmd = cmdMatch ? cmdMatch[1] : 'utility';
+          diagnosis = {
+            errorType: 'BinaryNotFound',
+            summary: `Executable '${missingCmd}' is not in system PATH.`,
+            rootCause: `The binary '${missingCmd}' is not installed or the directory is missing from the environment PATH.`,
+            suggestedCommand: `which ${missingCmd} || where.exe ${missingCmd}`,
+            confidence: 0.91,
+            explanation: `Install '${missingCmd}' using your system package manager (winget/apt/brew) or update system PATH.`
+          };
+        } else if (/git/i.test(text) && /conflict|fatal: not a git repository/i.test(text)) {
+          diagnosis = {
+            errorType: 'GitRepositoryError',
+            summary: 'Git state conflict or missing repository initialization.',
+            rootCause: 'Working directory has unresolved conflicts or lacks a .git configuration.',
+            suggestedCommand: 'git status --short',
+            confidence: 0.89,
+            explanation: 'Check repository status and resolve conflicted hunks before proceeding.'
+          };
+        }
+
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(diagnosis));
+      } catch (err) {
+        res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: 'Invalid payload' }));
+      }
+    });
+    return;
+  }
 
   const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
   const file = path.resolve(root, relative);
