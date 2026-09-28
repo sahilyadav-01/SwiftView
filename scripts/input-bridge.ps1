@@ -137,9 +137,13 @@ while ($line = [Console]::ReadLine()) {
                     "escape"    { [System.Windows.Forms.SendKeys]::SendWait("{ESC}") }
                     "esc"       { [System.Windows.Forms.SendKeys]::SendWait("{ESC}") }
                     "up"        { [System.Windows.Forms.SendKeys]::SendWait("{UP}") }
+                    "arrowup"   { [System.Windows.Forms.SendKeys]::SendWait("{UP}") }
                     "down"      { [System.Windows.Forms.SendKeys]::SendWait("{DOWN}") }
+                    "arrowdown" { [System.Windows.Forms.SendKeys]::SendWait("{DOWN}") }
                     "left"      { [System.Windows.Forms.SendKeys]::SendWait("{LEFT}") }
+                    "arrowleft" { [System.Windows.Forms.SendKeys]::SendWait("{LEFT}") }
                     "right"     { [System.Windows.Forms.SendKeys]::SendWait("{RIGHT}") }
+                    "arrowright" { [System.Windows.Forms.SendKeys]::SendWait("{RIGHT}") }
                     "ctrl+c"    { [System.Windows.Forms.SendKeys]::SendWait("^c") }
                     "ctrl+v"    { [System.Windows.Forms.SendKeys]::SendWait("^v") }
                     "ctrl+a"    { [System.Windows.Forms.SendKeys]::SendWait("^a") }

@@ -66,10 +66,17 @@ function getInputBridge() {
 
 function dispatchHostInput(event) {
   if (!event || typeof event !== 'object') return false;
+  const type = {
+    'input:mouse': 'mouse',
+    'input:wheel': 'wheel',
+    'input:key': 'key'
+  }[event.type] || event.type;
+  if (!['mouse', 'wheel', 'key'].includes(type)) return false;
+
   const bridge = getInputBridge();
   if (!bridge || !bridge.stdin || bridge.stdin.destroyed) return false;
   try {
-    bridge.stdin.write(JSON.stringify(event) + '\n');
+    bridge.stdin.write(JSON.stringify({ ...event, type }) + '\n');
     return true;
   } catch {
     return false;
@@ -351,6 +358,8 @@ function attachSignaling(server) {
         const room = rooms.get(socket.room);
         if (room && socket.role === 'viewer') {
           dispatchHostInput(message.data);
+          // Relay only so the host UI can visualize the remote pointer. The
+          // server has already injected this event into the native bridge.
           return send(room.host, { type: 'remote-input', data: message.data });
         }
       }

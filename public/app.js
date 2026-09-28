@@ -1064,14 +1064,9 @@ async function onSignalMessage(event) {
   }
   if (message.type === 'remote-input' && role === 'host') {
     const input = message.data;
-    if (input && input.type === 'mouse') {
+    if (input && (input.type === 'mouse' || input.type === 'input:mouse')) {
       renderRemoteLaserCursor(input.x, input.y, input.action, input.button);
     }
-    fetch('/api/host/input', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(input)
-    }).catch(() => {});
     return;
   }
   if (message.type === 'peer-left') endSession(message.message);
@@ -1462,8 +1457,9 @@ fetch('/api/health').then((response) => {
 // Interactive Remote Control & Mobile Touch Interaction Engine
 function sendRemoteInput(payload) {
   if (role !== 'viewer') return;
-  sendDataChannel(payload);
-  if (socket && socket.readyState === WebSocket.OPEN) {
+  // Prefer the peer-to-peer channel. WebSocket is a fallback, not a second
+  // delivery path, otherwise clicks and keystrokes are injected twice.
+  if (!sendDataChannel(payload) && socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: 'remote-input', data: payload }));
   }
 }
@@ -1834,4 +1830,3 @@ $('#hostOsShellToggle')?.addEventListener('click', () => {
 
 // Automatically register as host standby so this device is online and discoverable
 registerAsHost();
-
