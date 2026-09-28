@@ -1,0 +1,711 @@
+openapi: 3.1.0
+info:
+  title: S'K Remote Support Control API
+  version: 1.0.0-draft
+  description: Control-plane API for authorized remote-support sessions.
+servers:
+  - url: https://remote.example.com/api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Authentication
+  - name: Devices
+  - name: Sessions
+  - name: Files
+  - name: Audit
+paths:
+  /auth/login:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated, or an MFA challenge was issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: refreshSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+                  minLength: 32
+      responses:
+        '200':
+          description: Rotated token pair.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      responses:
+        '204':
+          description: Refresh-token family revoked.
+  /me:
+    get:
+      tags: [Authentication]
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Current user and active organization membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+  /devices:
+    get:
+      tags: [Devices]
+      operationId: listDevices
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/DeviceStatus'
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+      responses:
+        '200':
+          description: Organization-scoped devices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+                  nextCursor:
+                    type: [string, 'null']
+    post:
+      tags: [Devices]
+      operationId: createDeviceEnrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                groupId:
+                  type: [string, 'null']
+                  format: uuid
+      responses:
+        '201':
+          description: One-time enrollment token. It is returned only once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, enrollmentToken, expiresAt]
+                properties:
+                  deviceId:
+                    type: string
+                    format: uuid
+                  enrollmentToken:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+  /devices/{deviceId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Devices]
+      operationId: getDevice
+      responses:
+        '200':
+          description: Device details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Devices]
+      operationId: updateDevice
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                groupId:
+                  type: [string, 'null']
+                  format: uuid
+                unattendedEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated device.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+  /devices/{deviceId}/revoke:
+    post:
+      tags: [Devices]
+      operationId: revokeDevice
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '204':
+          description: Device credentials revoked and active sessions terminated.
+  /agent/enroll:
+    post:
+      tags: [Devices]
+      security: []
+      operationId: enrollAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enrollmentToken, publicKey, hostname, platform, agentVersion]
+              properties:
+                enrollmentToken:
+                  type: string
+                publicKey:
+                  type: string
+                  contentEncoding: base64
+                hostname:
+                  type: string
+                  maxLength: 255
+                platform:
+                  type: string
+                  enum: [windows]
+                osVersion:
+                  type: string
+                agentVersion:
+                  type: string
+      responses:
+        '201':
+          description: Device identity registered.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, publicId, certificate, controlPlane]
+                properties:
+                  deviceId:
+                    type: string
+                    format: uuid
+                  publicId:
+                    type: string
+                    pattern: '^SK-[0-9]{3}-[0-9]{3}-[0-9]{3}$'
+                  certificate:
+                    type: string
+                  controlPlane:
+                    type: string
+                    format: uri
+  /sessions:
+    get:
+      tags: [Sessions]
+      operationId: listSessions
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Organization-scoped sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+                  nextCursor:
+                    type: [string, 'null']
+    post:
+      tags: [Sessions]
+      operationId: requestSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceId, accessMode, permissions]
+              properties:
+                deviceId:
+                  type: string
+                  format: uuid
+                accessMode:
+                  type: string
+                  enum: [attended, unattended]
+                permissions:
+                  $ref: '#/components/schemas/SessionPermissions'
+      responses:
+        '202':
+          description: Session request created and sent to the agent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Device is offline, busy, or policy prevents the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /sessions/{sessionId}:
+    get:
+      tags: [Sessions]
+      operationId: getSession
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+  /sessions/{sessionId}/permissions:
+    patch:
+      tags: [Sessions]
+      operationId: updateSessionPermissions
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/SessionPermissions'
+      responses:
+        '200':
+          description: Effective permission set with incremented version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPermissions'
+        '409':
+          description: Session is not active.
+  /sessions/{sessionId}/end:
+    post:
+      tags: [Sessions]
+      operationId: endSession
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 120
+      responses:
+        '202':
+          description: Session termination initiated.
+  /sessions/{sessionId}/files:
+    post:
+      tags: [Files]
+      operationId: createFileTransfer
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileTransferRequest'
+      responses:
+        '201':
+          description: Transfer manifest accepted after permission and quota checks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileTransfer'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /audit:
+    get:
+      tags: [Audit]
+      operationId: listAuditEvents
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: sessionId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Append-only organization audit events.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEvent'
+                  nextCursor:
+                    type: [string, 'null']
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+  responses:
+    Unauthorized:
+      description: Authentication is missing, invalid, or expired.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: The authenticated principal lacks permission.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found within the current organization.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Too many requests.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 1024
+        mfaCode:
+          type: string
+          pattern: '^[0-9]{6}$'
+    LoginResponse:
+      oneOf:
+        - $ref: '#/components/schemas/TokenPair'
+        - type: object
+          required: [mfaRequired, challengeId]
+          properties:
+            mfaRequired:
+              const: true
+            challengeId:
+              type: string
+              format: uuid
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, expiresIn]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Access-token lifetime in seconds.
+    CurrentUser:
+      type: object
+      required: [id, email, displayName, organizationId, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        organizationId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [super_admin, admin, it_manager, technician, viewer]
+    DeviceStatus:
+      type: string
+      enum: [pending, online, offline, disabled, revoked]
+    Device:
+      type: object
+      required: [id, publicId, name, hostname, platform, status, unattendedEnabled, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        publicId:
+          type: string
+          pattern: '^SK-[0-9]{3}-[0-9]{3}-[0-9]{3}$'
+        name:
+          type: string
+        hostname:
+          type: string
+        platform:
+          type: string
+        osVersion:
+          type: [string, 'null']
+        agentVersion:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/DeviceStatus'
+        unattendedEnabled:
+          type: boolean
+        lastSeenAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    SessionPermissions:
+      type: object
+      additionalProperties: false
+      properties:
+        screen:
+          type: boolean
+          default: true
+        mouse:
+          type: boolean
+          default: false
+        keyboard:
+          type: boolean
+          default: false
+        clipboardRead:
+          type: boolean
+          default: false
+        clipboardWrite:
+          type: boolean
+          default: false
+        fileUpload:
+          type: boolean
+          default: false
+        fileDownload:
+          type: boolean
+          default: false
+        remoteRestart:
+          type: boolean
+          default: false
+        version:
+          type: integer
+          minimum: 1
+          readOnly: true
+    Session:
+      type: object
+      required: [id, deviceId, technicianId, status, accessMode, permissions, requestedAt, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        technicianId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [requested, approved, rejected, connecting, connected, reconnecting, ended, expired, failed]
+        accessMode:
+          type: string
+          enum: [attended, unattended]
+        route:
+          type: [string, 'null']
+          enum: [direct, relay, null]
+        permissions:
+          $ref: '#/components/schemas/SessionPermissions'
+        requestedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        endedAt:
+          type: [string, 'null']
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    FileTransferRequest:
+      type: object
+      additionalProperties: false
+      required: [direction, fileName, relativePath, sizeBytes, sha256]
+      properties:
+        direction:
+          type: string
+          enum: [upload_to_device, download_from_device]
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        relativePath:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        sizeBytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+    FileTransfer:
+      allOf:
+        - $ref: '#/components/schemas/FileTransferRequest'
+        - type: object
+          required: [id, sessionId, status, bytesTransferred, createdAt]
+          properties:
+            id:
+              type: string
+              format: uuid
+            sessionId:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [pending, active, paused, completed, cancelled, failed]
+            bytesTransferred:
+              type: integer
+              minimum: 0
+            createdAt:
+              type: string
+              format: date-time
+    AuditEvent:
+      type: object
+      required: [id, actorType, action, outcome, correlationId, occurredAt]
+      properties:
+        id:
+          type: integer
+        actorType:
+          type: string
+          enum: [user, device, system]
+        actorId:
+          type: [string, 'null']
+          format: uuid
+        deviceId:
+          type: [string, 'null']
+          format: uuid
+        sessionId:
+          type: [string, 'null']
+          format: uuid
+        action:
+          type: string
+        outcome:
+          type: string
+          enum: [success, denied, failure]
+        correlationId:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+        occurredAt:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlationId:
+          type: string
+          format: uuid
+
