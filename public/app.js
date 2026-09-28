@@ -954,7 +954,10 @@ function createPeer() {
       try { event.receiver.jitterBufferTarget = 15; } catch (_) {}
     }
     setSessionMode('screen');
-    showToast('Screen stream active');
+    if (role === 'viewer') {
+      setRemoteControl(true);
+    }
+    showToast('Screen stream active — Remote Control ON');
     logHostEvent('Received remote video track - display rendering active');
   };
 
@@ -1459,8 +1462,8 @@ fetch('/api/health').then((response) => {
 // Interactive Remote Control & Mobile Touch Interaction Engine
 function sendRemoteInput(payload) {
   if (role !== 'viewer') return;
-  const sent = sendDataChannel(payload);
-  if (!sent && socket && socket.readyState === WebSocket.OPEN) {
+  sendDataChannel(payload);
+  if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: 'remote-input', data: payload }));
   }
 }

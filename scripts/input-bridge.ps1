@@ -56,66 +56,63 @@ while ($line = [Console]::ReadLine()) {
 
         if ($type -eq "mouse") {
             $action = $msg.action
-            if ($action -eq "move") {
-                $targetX = [int][Math]::Round($msg.x * $screenWidth)
-                $targetY = [int][Math]::Round($msg.y * $screenHeight)
+            $normX = if ($msg.x -ne $null) { [Math]::Max(0.0, [Math]::Min(1.0, [double]$msg.x)) } else { $null }
+            $normY = if ($msg.y -ne $null) { [Math]::Max(0.0, [Math]::Min(1.0, [double]$msg.y)) } else { $null }
+
+            if ($normX -ne $null -and $normY -ne $null) {
+                $targetX = [int][Math]::Round($normX * $screenWidth)
+                $targetY = [int][Math]::Round($normY * $screenHeight)
                 [void][Win32Input]::SetCursorPos($targetX, $targetY)
+
+                $absX = [uint][Math]::Round($normX * 65535)
+                $absY = [uint][Math]::Round($normY * 65535)
+                [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_ABSOLUTE -bor [Win32Input]::MOUSEEVENTF_MOVE, $absX, $absY, 0, [UIntPtr]::Zero)
+            }
+
+            if ($action -eq "move") {
+                # Already moved above
             }
             elseif ($action -eq "down") {
                 $btn = $msg.button
-                if ($msg.x -ne $null -and $msg.y -ne $null) {
-                    $targetX = [int][Math]::Round($msg.x * $screenWidth)
-                    $targetY = [int][Math]::Round($msg.y * $screenHeight)
-                    [void][Win32Input]::SetCursorPos($targetX, $targetY)
-                }
-                if ($btn -eq 0 -or $btn -eq "left") {
-                    [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-                }
-                elseif ($btn -eq 2 -or $btn -eq "right") {
+                if ($btn -eq 2 -or $btn -eq "right") {
                     [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, [UIntPtr]::Zero)
                 }
                 elseif ($btn -eq 1 -or $btn -eq "middle") {
                     [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, [UIntPtr]::Zero)
                 }
+                else {
+                    [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+                }
             }
             elseif ($action -eq "up") {
                 $btn = $msg.button
-                if ($btn -eq 0 -or $btn -eq "left") {
-                    [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
-                }
-                elseif ($btn -eq 2 -or $btn -eq "right") {
+                if ($btn -eq 2 -or $btn -eq "right") {
                     [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_RIGHTUP, 0, 0, 0, [UIntPtr]::Zero)
                 }
                 elseif ($btn -eq 1 -or $btn -eq "middle") {
                     [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_MIDDLEUP, 0, 0, 0, [UIntPtr]::Zero)
                 }
+                else {
+                    [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+                }
             }
             elseif ($action -eq "click") {
-                if ($msg.x -ne $null -and $msg.y -ne $null) {
-                    $targetX = [int][Math]::Round($msg.x * $screenWidth)
-                    $targetY = [int][Math]::Round($msg.y * $screenHeight)
-                    [void][Win32Input]::SetCursorPos($targetX, $targetY)
-                }
+                $btn = $msg.button
                 if ($btn -eq 2 -or $btn -eq "right") {
                     [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-                    Start-Sleep -Milliseconds 15
+                    Start-Sleep -Milliseconds 25
                     [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_RIGHTUP, 0, 0, 0, [UIntPtr]::Zero)
                 }
                 else {
                     [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-                    Start-Sleep -Milliseconds 15
+                    Start-Sleep -Milliseconds 25
                     [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
                 }
             }
             elseif ($action -eq "dblclick") {
-                if ($msg.x -ne $null -and $msg.y -ne $null) {
-                    $targetX = [int][Math]::Round($msg.x * $screenWidth)
-                    $targetY = [int][Math]::Round($msg.y * $screenHeight)
-                    [void][Win32Input]::SetCursorPos($targetX, $targetY)
-                }
                 [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
                 [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
-                Start-Sleep -Milliseconds 40
+                Start-Sleep -Milliseconds 50
                 [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
                 [Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
             }

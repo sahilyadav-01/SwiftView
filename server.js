@@ -20,6 +20,15 @@ const rooms = new Map();
 
 let inputBridgeProcess = null;
 
+function closeInputBridge() {
+  const bridge = inputBridgeProcess;
+  inputBridgeProcess = null;
+  if (!bridge) return;
+
+  if (bridge.stdin && !bridge.stdin.destroyed) bridge.stdin.end();
+  if (bridge.exitCode === null && !bridge.killed) bridge.kill();
+}
+
 function getInputBridge() {
   if (process.platform !== 'win32') return null;
   if (inputBridgeProcess && !inputBridgeProcess.killed && inputBridgeProcess.exitCode === null) {
@@ -40,8 +49,12 @@ function getInputBridge() {
       if (err) console.warn('[InputBridge stderr]:', err);
     });
 
+    const bridge = inputBridgeProcess;
+    inputBridgeProcess.on('error', (err) => {
+      console.warn('[InputBridge] Process error:', err.message);
+    });
     inputBridgeProcess.on('exit', () => {
-      inputBridgeProcess = null;
+      if (inputBridgeProcess === bridge) inputBridgeProcess = null;
     });
 
     return inputBridgeProcess;
@@ -272,6 +285,7 @@ function handler(req, res) {
 
 function attachSignaling(server) {
   const wss = new WebSocketServer({ server, path: '/signal', maxPayload: 64 * 1024 });
+  server.once('close', closeInputBridge);
   const send = (socket, payload) => socket && socket.readyState === 1 && socket.send(JSON.stringify(payload));
 
   wss.on('connection', (socket) => {
@@ -381,6 +395,9 @@ function ensureCertificate() {
 }
 
 if (require.main === module) {
+  if (process.platform === 'win32') {
+    try { getInputBridge(); } catch (_) {}
+  }
   const localIps = getLocalIps();
   const primaryIp = localIps[0] || '127.0.0.1';
   const sslOpts = ensureCertificate();
