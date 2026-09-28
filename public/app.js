@@ -675,7 +675,11 @@ function handleDataChannelMessage(raw) {
           type: 'key',
           key: message.key,
           text: message.text,
-          special: message.special
+          special: message.special,
+          ctrl: message.ctrl,
+          shift: message.shift,
+          alt: message.alt,
+          meta: message.meta
         })
       }).catch(() => {});
     } else if (message.type === 'rc:toggle') {
@@ -1476,6 +1480,12 @@ function setRemoteControl(active) {
   if (banner) banner.hidden = !active;
   if (video) video.classList.toggle('controlling', active);
 
+  // Prevent a local text box from consuming remote keyboard input. This is
+  // especially important for editing keys such as Delete and Backspace.
+  if (active && document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+
   sendRemoteInput({ type: 'rc:toggle', active });
   showToast(`Remote Control ${active ? 'Enabled — Mouse & Keyboard active' : 'Disabled'}`);
 }
@@ -1743,7 +1753,8 @@ document.addEventListener('keydown', (e) => {
       else if (keyLower === 'v') special = 'ctrl+v';
       else if (keyLower === 'a') special = 'ctrl+a';
       else if (keyLower === 'z') special = 'ctrl+z';
-    } else if (['enter', 'backspace', 'tab', 'escape', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'delete', 'home', 'end'].includes(keyLower)) {
+    }
+    if (!special && ['enter', 'backspace', 'tab', 'escape', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'delete', 'insert', 'home', 'end', 'pageup', 'pagedown'].includes(keyLower)) {
       special = keyLower;
     }
 
@@ -1751,7 +1762,11 @@ document.addEventListener('keydown', (e) => {
       type: 'input:key',
       key: e.key,
       special,
-      text: (!special && e.key.length === 1) ? e.key : null
+      text: (!special && e.key.length === 1) ? e.key : null,
+      ctrl: e.ctrlKey,
+      shift: e.shiftKey,
+      alt: e.altKey,
+      meta: e.metaKey
     });
   }
 });

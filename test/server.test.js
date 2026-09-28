@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
 const WebSocket = require('ws');
 const { handler, attachSignaling } = require('../server');
 
@@ -132,4 +134,20 @@ test('accepts remote input events via /api/host/input', async () => {
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.ok, true);
+});
+
+test('exposes Delete in the mobile remote-control toolbar', async () => {
+  const response = await fetch(baseUrl);
+  const html = await response.text();
+  assert.match(html, /class="mob-btn mob-key" data-key="Delete"/);
+});
+
+test('forwards Delete modifiers to the native Windows bridge', async () => {
+  const appResponse = await fetch(`${baseUrl}/app.js`);
+  const appSource = await appResponse.text();
+  assert.match(appSource, /shift: e\.shiftKey/);
+  assert.match(appSource, /special: message\.special,[\s\S]*shift: message\.shift/);
+
+  const bridgeSource = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'input-bridge.ps1'), 'utf8');
+  assert.match(bridgeSource, /"delete"\s+\{ Send-VirtualKey 0x2E \$true \$ctrl \$shift \$alt \$meta \}/);
 });

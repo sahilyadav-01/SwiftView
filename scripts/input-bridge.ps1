@@ -46,6 +46,32 @@ $screenHeight = [Win32Input]::GetSystemMetrics(1)
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::WriteLine("READY width=$screenWidth height=$screenHeight")
 
+function Send-VirtualKey {
+    param(
+        [byte]$VirtualKey,
+        [bool]$Extended = $false,
+        [bool]$Control = $false,
+        [bool]$Shift = $false,
+        [bool]$Alt = $false,
+        [bool]$Meta = $false
+    )
+
+    if ($Control) { [Win32Input]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero) }
+    if ($Shift)   { [Win32Input]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero) }
+    if ($Alt)     { [Win32Input]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero) }
+    if ($Meta)    { [Win32Input]::keybd_event(0x5B, 0, 0, [UIntPtr]::Zero) }
+
+    $downFlags = if ($Extended) { [Win32Input]::KEYEVENTF_EXTENDEDKEY } else { 0 }
+    [Win32Input]::keybd_event($VirtualKey, 0, $downFlags, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 12
+    [Win32Input]::keybd_event($VirtualKey, 0, ($downFlags -bor [Win32Input]::KEYEVENTF_KEYUP), [UIntPtr]::Zero)
+
+    if ($Meta)    { [Win32Input]::keybd_event(0x5B, 0, [Win32Input]::KEYEVENTF_KEYUP, [UIntPtr]::Zero) }
+    if ($Alt)     { [Win32Input]::keybd_event(0x12, 0, [Win32Input]::KEYEVENTF_KEYUP, [UIntPtr]::Zero) }
+    if ($Shift)   { [Win32Input]::keybd_event(0x10, 0, [Win32Input]::KEYEVENTF_KEYUP, [UIntPtr]::Zero) }
+    if ($Control) { [Win32Input]::keybd_event(0x11, 0, [Win32Input]::KEYEVENTF_KEYUP, [UIntPtr]::Zero) }
+}
+
 while ($line = [Console]::ReadLine()) {
     if ([string]::IsNullOrWhiteSpace($line)) { continue }
     if ($line -eq "QUIT") { break }
@@ -128,30 +154,37 @@ while ($line = [Console]::ReadLine()) {
             $key = $msg.key
             $text = $msg.text
             $special = $msg.special
+            $ctrl = [bool]$msg.ctrl
+            $shift = [bool]$msg.shift
+            $alt = [bool]$msg.alt
+            $meta = [bool]$msg.meta
 
             if ($special) {
                 switch ($special.ToLower()) {
-                    "enter"     { [System.Windows.Forms.SendKeys]::SendWait("{ENTER}") }
-                    "backspace" { [System.Windows.Forms.SendKeys]::SendWait("{BACKSPACE}") }
-                    "tab"       { [System.Windows.Forms.SendKeys]::SendWait("{TAB}") }
-                    "escape"    { [System.Windows.Forms.SendKeys]::SendWait("{ESC}") }
-                    "esc"       { [System.Windows.Forms.SendKeys]::SendWait("{ESC}") }
-                    "up"        { [System.Windows.Forms.SendKeys]::SendWait("{UP}") }
-                    "arrowup"   { [System.Windows.Forms.SendKeys]::SendWait("{UP}") }
-                    "down"      { [System.Windows.Forms.SendKeys]::SendWait("{DOWN}") }
-                    "arrowdown" { [System.Windows.Forms.SendKeys]::SendWait("{DOWN}") }
-                    "left"      { [System.Windows.Forms.SendKeys]::SendWait("{LEFT}") }
-                    "arrowleft" { [System.Windows.Forms.SendKeys]::SendWait("{LEFT}") }
-                    "right"     { [System.Windows.Forms.SendKeys]::SendWait("{RIGHT}") }
-                    "arrowright" { [System.Windows.Forms.SendKeys]::SendWait("{RIGHT}") }
-                    "ctrl+c"    { [System.Windows.Forms.SendKeys]::SendWait("^c") }
-                    "ctrl+v"    { [System.Windows.Forms.SendKeys]::SendWait("^v") }
-                    "ctrl+a"    { [System.Windows.Forms.SendKeys]::SendWait("^a") }
-                    "ctrl+z"    { [System.Windows.Forms.SendKeys]::SendWait("^z") }
-                    "delete"    { [System.Windows.Forms.SendKeys]::SendWait("{DEL}") }
-                    "home"      { [System.Windows.Forms.SendKeys]::SendWait("{HOME}") }
-                    "end"       { [System.Windows.Forms.SendKeys]::SendWait("{END}") }
-                    "win"       { [Win32Input]::keybd_event(0x5B, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 20; [Win32Input]::keybd_event(0x5B, 0, [Win32Input]::KEYEVENTF_KEYUP, [UIntPtr]::Zero) }
+                    "enter"      { Send-VirtualKey 0x0D $false $ctrl $shift $alt $meta }
+                    "backspace"  { Send-VirtualKey 0x08 $false $ctrl $shift $alt $meta }
+                    "tab"        { Send-VirtualKey 0x09 $false $ctrl $shift $alt $meta }
+                    "escape"     { Send-VirtualKey 0x1B $false $ctrl $shift $alt $meta }
+                    "esc"        { Send-VirtualKey 0x1B $false $ctrl $shift $alt $meta }
+                    "up"         { Send-VirtualKey 0x26 $true $ctrl $shift $alt $meta }
+                    "arrowup"    { Send-VirtualKey 0x26 $true $ctrl $shift $alt $meta }
+                    "down"       { Send-VirtualKey 0x28 $true $ctrl $shift $alt $meta }
+                    "arrowdown"  { Send-VirtualKey 0x28 $true $ctrl $shift $alt $meta }
+                    "left"       { Send-VirtualKey 0x25 $true $ctrl $shift $alt $meta }
+                    "arrowleft"  { Send-VirtualKey 0x25 $true $ctrl $shift $alt $meta }
+                    "right"      { Send-VirtualKey 0x27 $true $ctrl $shift $alt $meta }
+                    "arrowright" { Send-VirtualKey 0x27 $true $ctrl $shift $alt $meta }
+                    "ctrl+c"     { Send-VirtualKey 0x43 $false $true $false $false $false }
+                    "ctrl+v"     { Send-VirtualKey 0x56 $false $true $false $false $false }
+                    "ctrl+a"     { Send-VirtualKey 0x41 $false $true $false $false $false }
+                    "ctrl+z"     { Send-VirtualKey 0x5A $false $true $false $false $false }
+                    "delete"     { Send-VirtualKey 0x2E $true $ctrl $shift $alt $meta }
+                    "insert"     { Send-VirtualKey 0x2D $true $ctrl $shift $alt $meta }
+                    "home"       { Send-VirtualKey 0x24 $true $ctrl $shift $alt $meta }
+                    "end"        { Send-VirtualKey 0x23 $true $ctrl $shift $alt $meta }
+                    "pageup"     { Send-VirtualKey 0x21 $true $ctrl $shift $alt $meta }
+                    "pagedown"   { Send-VirtualKey 0x22 $true $ctrl $shift $alt $meta }
+                    "win"        { Send-VirtualKey 0x5B $true $false $false $false $false }
                 }
             }
             elseif ($text) {
