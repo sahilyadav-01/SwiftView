@@ -177,3 +177,207 @@
 .guide-list code{background:#04060a;color:#ffd394;padding:1px 5px;border-radius:3px}
 .guide-modal .modal-footer{margin-top:18px;display:flex;justify-content:flex-end}
 
+/* Remote Interactive Control & Laser Pointer Styles */
+#remoteVideo.controlling {
+  cursor: crosshair;
+}
+
+.remote-control-banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(14, 18, 28, 0.92);
+  border: 1px solid rgba(255, 101, 77, 0.5);
+  box-shadow: 0 8px 30px rgba(255, 101, 77, 0.25), 0 4px 12px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  padding: 6px 16px;
+  border-radius: 30px;
+  font-size: 11px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.rc-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5238;
+  box-shadow: 0 0 10px #ff5238;
+  animation: pulseRc 1.4s infinite;
+}
+
+@keyframes pulseRc {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 14px #ff5238; }
+  100% { transform: scale(0.9); opacity: 0.8; }
+}
+
+.rc-exit-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffd2cc;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.rc-exit-btn:hover {
+  background: rgba(255, 101, 77, 0.4);
+  color: #fff;
+}
+
+/* Remote Laser Pointer (Host & Viewer HUD) */
+.remote-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 20;
+  transform: translate(-2px, -2px);
+  transition: transform 0.04s ease-out;
+}
+
+.cursor-pointer {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 14px solid #ff4757;
+  filter: drop-shadow(0 0 6px rgba(255, 71, 87, 0.8));
+  transform: rotate(-35deg);
+}
+
+.cursor-badge {
+  position: absolute;
+  top: 14px;
+  left: 12px;
+  background: rgba(255, 71, 87, 0.9);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.cursor-ripple {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #ff4757;
+  transform: translate(-12px, -12px) scale(0);
+  opacity: 1;
+  pointer-events: none;
+  animation: rippleOut 0.4s ease-out forwards;
+}
+
+@keyframes rippleOut {
+  0% { transform: translate(-12px, -12px) scale(0.2); opacity: 1; }
+  100% { transform: translate(-12px, -12px) scale(2.2); opacity: 0; }
+}
+
+/* Mobile Touch & Virtual Keyboard Toolbar */
+.mobile-toolbar {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(12, 16, 26, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(14px);
+  border-radius: 12px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  z-index: 12;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+  max-width: 96%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-virtual-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+}
+
+.mob-btn {
+  background: #171d2b;
+  border: 1px solid #2b354a;
+  color: #d1d8e6;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 7px 11px;
+  border-radius: 7px;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: 0.15s;
+}
+
+.mob-btn:active, .mob-btn:hover {
+  background: #252e42;
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.mob-btn.mob-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+}
+
+.mob-mode b {
+  color: #44d19b;
+}
+
+.chip-toggle#remoteControlToggle.active {
+  background: rgba(255, 101, 77, 0.18);
+  border-color: rgba(255, 101, 77, 0.45);
+  color: #ff9277;
+}
+
+.chip-toggle#remoteControlToggle.active b {
+  color: #fff;
+}
+
+.shell-mode-btn.active {
+  background: rgba(68, 209, 155, 0.15);
+  border-color: rgba(68, 209, 155, 0.4);
+  color: #44d19b;
+}
+
+@media (max-width: 768px) {
+  .mobile-toolbar {
+    bottom: 8px;
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .mob-btn {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+  .remote-control-banner {
+    width: 90%;
+    font-size: 10px;
+    padding: 5px 12px;
+  }
+}
+

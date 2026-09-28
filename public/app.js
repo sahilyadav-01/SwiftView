@@ -30,6 +30,13 @@ let telemetryInterval = null;
 let currentMode = 'screen';
 let hostEvents = [];
 
+// Interactive Remote Control & Live OS state
+let remoteControlActive = false;
+let liveHostOsEnabled = true;
+let touchMode = 'direct'; // 'direct' | 'trackpad'
+let lastNormalizedPos = { x: 0.5, y: 0.5 };
+let lastThrottleMove = 0;
+
 // Adaptive Network Controller (ANC) state
 let ancInterval = null;
 let currentTier = 1;
@@ -544,7 +551,35 @@ function executeHostCommand(cmd, id) {
     }
   }
 
-  // Unknown command
+  // If live host OS execution is enabled or command starts with run/exec, execute on host OS!
+  if (liveHostOsEnabled || command === 'run' || command === 'exec') {
+    const osCmd = (command === 'run' || command === 'exec') ? args : trimmed;
+    fetch('/api/host/exec', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cmd: osCmd })
+    }).then((res) => res.json()).then((data) => {
+      const outputText = data.output || data.error || '[Process completed with no output]';
+      sendDataChannel({
+        type: 'shell:output',
+        id,
+        text: outputText.trim(),
+        stream: data.error ? 'stderr' : 'stdout',
+        exitCode: data.exitCode || 0
+      });
+    }).catch(() => {
+      sendDataChannel({
+        type: 'shell:output',
+        id,
+        text: `swiftview-shell: command not found: "${command}". Type "help" to view built-in commands.`,
+        stream: 'stderr',
+        exitCode: 127
+      });
+    });
+    return;
+  }
+
+  // Unknown command fallback
   return sendDataChannel({
     type: 'shell:output',
     id,
@@ -552,6 +587,52 @@ function executeHostCommand(cmd, id) {
     stream: 'stderr',
     exitCode: 127
   });
+}
+
+function renderRemoteLaserCursor(normX, normY, action, button) {
+  const cursor = $('#remoteCursor');
+  const stage = $('#sessionStage');
+  if (!cursor || !stage) return;
+
+  const rect = stage.getBoundingClientRect();
+  const videoEl = $('#remoteVideo');
+  const vRect = videoEl.getBoundingClientRect();
+
+  const vWidth = videoEl.videoWidth || 1920;
+  const vHeight = videoEl.videoHeight || 1080;
+  const vRatio = vWidth / vHeight;
+  const cRatio = vRect.width / vRect.height;
+
+  let renderWidth, renderHeight, offsetX, offsetY;
+  if (cRatio > vRatio) {
+    renderHeight = vRect.height;
+    renderWidth = vRect.height * vRatio;
+    offsetX = (vRect.width - renderWidth) / 2;
+    offsetY = 0;
+  } else {
+    renderWidth = vRect.width;
+    renderHeight = vRect.width / vRatio;
+    offsetX = 0;
+    offsetY = (vRect.height - renderHeight) / 2;
+  }
+
+  const px = (vRect.left - rect.left) + offsetX + (normX * renderWidth);
+  const py = (vRect.top - rect.top) + offsetY + (normY * renderHeight);
+
+  cursor.style.transform = `translate3d(${Math.round(px)}px, ${Math.round(py)}px, 0)`;
+  cursor.hidden = false;
+
+  if (action === 'click' || action === 'down' || action === 'dblclick') {
+    const ripple = document.createElement('div');
+    ripple.className = 'cursor-ripple';
+    cursor.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 450);
+  }
+
+  clearTimeout(renderRemoteLaserCursor.hideTimer);
+  renderRemoteLaserCursor.hideTimer = setTimeout(() => {
+    cursor.hidden = true;
+  }, 3500);
 }
 
 function handleDataChannelMessage(raw) {
@@ -563,6 +644,43 @@ function handleDataChannelMessage(raw) {
       executeHostCommand(message.cmd, message.id);
     } else if (message.type === 'ping') {
       sendDataChannel({ type: 'pong', timestamp: message.timestamp });
+    } else if (message.type === 'input:mouse') {
+      renderRemoteLaserCursor(message.x, message.y, message.action, message.button);
+      fetch('/api/host/input', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'mouse',
+          action: message.action,
+          button: message.button,
+          x: message.x,
+          y: message.y
+        })
+      }).catch(() => {});
+    } else if (message.type === 'input:wheel') {
+      fetch('/api/host/input', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'wheel',
+          dx: message.dx,
+          dy: message.dy
+        })
+      }).catch(() => {});
+    } else if (message.type === 'input:key') {
+      fetch('/api/host/input', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'key',
+          key: message.key,
+          text: message.text,
+          special: message.special
+        })
+      }).catch(() => {});
+    } else if (message.type === 'rc:toggle') {
+      logHostEvent(`Remote control ${message.active ? 'ENABLED' : 'DISABLED'} by viewer`);
+      showToast(`Viewer ${message.active ? 'enabled' : 'disabled'} remote control`);
     }
   } else {
     // Viewer receives output from host
@@ -941,6 +1059,18 @@ async function onSignalMessage(event) {
       console.warn('Signaling message handling warning:', err);
     }
   }
+  if (message.type === 'remote-input' && role === 'host') {
+    const input = message.data;
+    if (input && input.type === 'mouse') {
+      renderRemoteLaserCursor(input.x, input.y, input.action, input.button);
+    }
+    fetch('/api/host/input', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input)
+    }).catch(() => {});
+    return;
+  }
   if (message.type === 'peer-left') endSession(message.message);
 }
 
@@ -963,6 +1093,9 @@ function showSession(label) {
 }
 
 function endSession(message) {
+  setRemoteControl(false);
+  const rcCursor = $('#remoteCursor');
+  if (rcCursor) rcCursor.hidden = true;
   stopPingLoop();
   stopTelemetryLoop();
   stopAdaptiveNetworkController();
@@ -1323,5 +1456,379 @@ fetch('/api/health').then((response) => {
   $('.status').classList.add('offline'); $('.status').innerHTML = '<i></i> Service unavailable';
 });
 
+// Interactive Remote Control & Mobile Touch Interaction Engine
+function sendRemoteInput(payload) {
+  if (role !== 'viewer') return;
+  const sent = sendDataChannel(payload);
+  if (!sent && socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'remote-input', data: payload }));
+  }
+}
+
+function setRemoteControl(active) {
+  remoteControlActive = active;
+  const toggleBtn = $('#remoteControlToggle');
+  const statusEl = $('#remoteControlStatus');
+  const banner = $('#remoteControlBanner');
+  const video = $('#remoteVideo');
+
+  if (toggleBtn) toggleBtn.classList.toggle('active', active);
+  if (statusEl) statusEl.textContent = active ? 'ON' : 'OFF';
+  if (banner) banner.hidden = !active;
+  if (video) video.classList.toggle('controlling', active);
+
+  sendRemoteInput({ type: 'rc:toggle', active });
+  showToast(`Remote Control ${active ? 'Enabled — Mouse & Keyboard active' : 'Disabled'}`);
+}
+
+function getNormalizedCoordinates(e, videoEl) {
+  if (!videoEl) return null;
+  const rect = videoEl.getBoundingClientRect();
+  const vWidth = videoEl.videoWidth || 1920;
+  const vHeight = videoEl.videoHeight || 1080;
+  if (!rect.width || !rect.height) return null;
+
+  const vRatio = vWidth / vHeight;
+  const cRatio = rect.width / rect.height;
+
+  let renderWidth, renderHeight, offsetX, offsetY;
+  if (cRatio > vRatio) {
+    renderHeight = rect.height;
+    renderWidth = rect.height * vRatio;
+    offsetX = (rect.width - renderWidth) / 2;
+    offsetY = 0;
+  } else {
+    renderWidth = rect.width;
+    renderHeight = rect.width / vRatio;
+    offsetX = 0;
+    offsetY = (rect.height - renderHeight) / 2;
+  }
+
+  const clientX = e.clientX - rect.left - offsetX;
+  const clientY = e.clientY - rect.top - offsetY;
+
+  const normX = clientX / renderWidth;
+  const normY = clientY / renderHeight;
+
+  if (normX < 0 || normX > 1 || normY < 0 || normY > 1) {
+    return null;
+  }
+
+  return {
+    x: Math.max(0, Math.min(1, Number(normX.toFixed(4)))),
+    y: Math.max(0, Math.min(1, Number(normY.toFixed(4))))
+  };
+}
+
+const remoteVideoEl = $('#remoteVideo');
+
+// Desktop Mouse Handlers
+remoteVideoEl?.addEventListener('mousemove', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  const coords = getNormalizedCoordinates(e, remoteVideoEl);
+  if (!coords) return;
+  lastNormalizedPos = coords;
+
+  const now = Date.now();
+  if (now - lastThrottleMove > 16) {
+    lastThrottleMove = now;
+    sendRemoteInput({
+      type: 'input:mouse',
+      action: 'move',
+      x: coords.x,
+      y: coords.y
+    });
+  }
+});
+
+remoteVideoEl?.addEventListener('mousedown', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  const coords = getNormalizedCoordinates(e, remoteVideoEl) || lastNormalizedPos;
+  sendRemoteInput({
+    type: 'input:mouse',
+    action: 'down',
+    button: e.button,
+    x: coords.x,
+    y: coords.y
+  });
+});
+
+remoteVideoEl?.addEventListener('mouseup', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  const coords = getNormalizedCoordinates(e, remoteVideoEl) || lastNormalizedPos;
+  sendRemoteInput({
+    type: 'input:mouse',
+    action: 'up',
+    button: e.button,
+    x: coords.x,
+    y: coords.y
+  });
+});
+
+remoteVideoEl?.addEventListener('click', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  const coords = getNormalizedCoordinates(e, remoteVideoEl) || lastNormalizedPos;
+  sendRemoteInput({
+    type: 'input:mouse',
+    action: 'click',
+    button: e.button,
+    x: coords.x,
+    y: coords.y
+  });
+});
+
+remoteVideoEl?.addEventListener('dblclick', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  const coords = getNormalizedCoordinates(e, remoteVideoEl) || lastNormalizedPos;
+  sendRemoteInput({
+    type: 'input:mouse',
+    action: 'dblclick',
+    button: e.button,
+    x: coords.x,
+    y: coords.y
+  });
+});
+
+remoteVideoEl?.addEventListener('contextmenu', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  e.preventDefault();
+  const coords = getNormalizedCoordinates(e, remoteVideoEl) || lastNormalizedPos;
+  sendRemoteInput({
+    type: 'input:mouse',
+    action: 'click',
+    button: 2,
+    x: coords.x,
+    y: coords.y
+  });
+});
+
+remoteVideoEl?.addEventListener('wheel', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  e.preventDefault();
+  sendRemoteInput({
+    type: 'input:wheel',
+    dx: e.deltaX,
+    dy: e.deltaY
+  });
+}, { passive: false });
+
+// Mobile Touch Gestures
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+let touchMoved = false;
+let longPressTimer = null;
+
+remoteVideoEl?.addEventListener('touchstart', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    touchStartTime = Date.now();
+    touchMoved = false;
+
+    const coords = getNormalizedCoordinates(t, remoteVideoEl);
+    if (coords) lastNormalizedPos = coords;
+
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      if (!touchMoved) {
+        if (navigator.vibrate) navigator.vibrate(50);
+        sendRemoteInput({
+          type: 'input:mouse',
+          action: 'click',
+          button: 2,
+          x: lastNormalizedPos.x,
+          y: lastNormalizedPos.y
+        });
+        showToast('Right-click sent');
+      }
+    }, 450);
+  }
+}, { passive: true });
+
+remoteVideoEl?.addEventListener('touchmove', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    if (Math.hypot(dx, dy) > 8) {
+      touchMoved = true;
+      clearTimeout(longPressTimer);
+    }
+
+    if (touchMode === 'direct') {
+      const coords = getNormalizedCoordinates(t, remoteVideoEl);
+      if (coords) {
+        lastNormalizedPos = coords;
+        const now = Date.now();
+        if (now - lastThrottleMove > 20) {
+          lastThrottleMove = now;
+          sendRemoteInput({
+            type: 'input:mouse',
+            action: 'move',
+            x: coords.x,
+            y: coords.y
+          });
+        }
+      }
+    } else {
+      const deltaNormX = dx / (window.innerWidth * 1.2);
+      const deltaNormY = dy / (window.innerHeight * 1.2);
+      lastNormalizedPos.x = Math.max(0, Math.min(1, lastNormalizedPos.x + deltaNormX));
+      lastNormalizedPos.y = Math.max(0, Math.min(1, lastNormalizedPos.y + deltaNormY));
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+
+      const now = Date.now();
+      if (now - lastThrottleMove > 20) {
+        lastThrottleMove = now;
+        sendRemoteInput({
+          type: 'input:mouse',
+          action: 'move',
+          x: lastNormalizedPos.x,
+          y: lastNormalizedPos.y
+        });
+      }
+    }
+  } else if (e.touches.length === 2) {
+    e.preventDefault();
+    const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    if (remoteVideoEl._prev2FingerY !== undefined) {
+      const scrollDy = (remoteVideoEl._prev2FingerY - currentY) * 2;
+      sendRemoteInput({
+        type: 'input:wheel',
+        dx: 0,
+        dy: scrollDy
+      });
+    }
+    remoteVideoEl._prev2FingerY = currentY;
+  }
+}, { passive: false });
+
+remoteVideoEl?.addEventListener('touchend', (e) => {
+  if (!remoteControlActive || role !== 'viewer') return;
+  clearTimeout(longPressTimer);
+  remoteVideoEl._prev2FingerY = undefined;
+
+  if (!touchMoved && (Date.now() - touchStartTime < 350)) {
+    sendRemoteInput({
+      type: 'input:mouse',
+      action: 'click',
+      button: 0,
+      x: lastNormalizedPos.x,
+      y: lastNormalizedPos.y
+    });
+  }
+});
+
+// Global Keyboard Dispatch
+document.addEventListener('keydown', (e) => {
+  const target = e.target;
+  const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') && target.id !== 'mobileVirtualInput';
+  if (isInput) return;
+
+  if (remoteControlActive && role === 'viewer') {
+    if (e.key === 'Escape') {
+      setRemoteControl(false);
+      return;
+    }
+
+    e.preventDefault();
+    let special = null;
+    const keyLower = e.key.toLowerCase();
+    if (e.ctrlKey || e.metaKey) {
+      if (keyLower === 'c') special = 'ctrl+c';
+      else if (keyLower === 'v') special = 'ctrl+v';
+      else if (keyLower === 'a') special = 'ctrl+a';
+      else if (keyLower === 'z') special = 'ctrl+z';
+    } else if (['enter', 'backspace', 'tab', 'escape', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'delete', 'home', 'end'].includes(keyLower)) {
+      special = keyLower;
+    }
+
+    sendRemoteInput({
+      type: 'input:key',
+      key: e.key,
+      special,
+      text: (!special && e.key.length === 1) ? e.key : null
+    });
+  }
+});
+
+// Mobile Virtual Keyboard trigger & Quick Shortcuts
+$('#mobileKbToggle')?.addEventListener('click', () => {
+  const input = $('#mobileVirtualInput');
+  if (input) {
+    input.focus();
+    showToast('Mobile keyboard focused. Type to send keys.');
+  }
+});
+
+$('#mobileVirtualInput')?.addEventListener('input', (e) => {
+  const val = e.target.value;
+  if (val) {
+    for (const char of val) {
+      sendRemoteInput({ type: 'input:key', text: char });
+    }
+    e.target.value = '';
+  }
+});
+
+$('#mobileVirtualInput')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Backspace') {
+    sendRemoteInput({ type: 'input:key', special: 'backspace' });
+  } else if (e.key === 'Enter') {
+    sendRemoteInput({ type: 'input:key', special: 'enter' });
+  }
+});
+
+document.querySelectorAll('.mob-key').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.key;
+    if (key) {
+      sendRemoteInput({ type: 'input:key', special: key.toLowerCase() });
+      showToast(`Sent ${key}`);
+    }
+  });
+});
+
+$('#mobileRightClickBtn')?.addEventListener('click', () => {
+  sendRemoteInput({
+    type: 'input:mouse',
+    action: 'click',
+    button: 2,
+    x: lastNormalizedPos.x,
+    y: lastNormalizedPos.y
+  });
+  showToast('Sent Right-click');
+});
+
+$('#mobileTouchModeBtn')?.addEventListener('click', () => {
+  touchMode = touchMode === 'direct' ? 'trackpad' : 'direct';
+  const label = touchMode === 'direct' ? 'Direct' : 'Trackpad';
+  $('#mobileTouchModeBtn').innerHTML = `Mode: <b>${label}</b>`;
+  showToast(`Switched to ${label} Touch Mode`);
+});
+
+$('#remoteControlToggle')?.addEventListener('click', () => {
+  setRemoteControl(!remoteControlActive);
+});
+
+$('#exitRcBtn')?.addEventListener('click', () => {
+  setRemoteControl(false);
+});
+
+$('#hostOsShellToggle')?.addEventListener('click', () => {
+  liveHostOsEnabled = !liveHostOsEnabled;
+  const statusEl = $('#hostOsShellStatus');
+  const btn = $('#hostOsShellToggle');
+  if (statusEl) statusEl.textContent = liveHostOsEnabled ? 'Live' : 'Built-in';
+  if (btn) btn.classList.toggle('active', liveHostOsEnabled);
+  showToast(`Dev Shell Mode: ${liveHostOsEnabled ? 'Live Host OS (PowerShell)' : 'Built-in Shell'}`);
+});
+
 // Automatically register as host standby so this device is online and discoverable
 registerAsHost();
+

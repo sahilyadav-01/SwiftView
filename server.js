@@ -4,7 +4,7 @@ const net = require('node:net');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
 const { WebSocketServer } = require('ws');
 
 const root = path.join(__dirname, 'public');
@@ -17,6 +17,51 @@ const types = {
 };
 
 const rooms = new Map();
+
+let inputBridgeProcess = null;
+
+function getInputBridge() {
+  if (process.platform !== 'win32') return null;
+  if (inputBridgeProcess && !inputBridgeProcess.killed && inputBridgeProcess.exitCode === null) {
+    return inputBridgeProcess;
+  }
+  const script = path.join(__dirname, 'scripts', 'input-bridge.ps1');
+  if (!fs.existsSync(script)) return null;
+
+  try {
+    inputBridgeProcess = spawn('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', script
+    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    inputBridgeProcess.stderr.on('data', (d) => {
+      const err = d.toString().trim();
+      if (err) console.warn('[InputBridge stderr]:', err);
+    });
+
+    inputBridgeProcess.on('exit', () => {
+      inputBridgeProcess = null;
+    });
+
+    return inputBridgeProcess;
+  } catch (err) {
+    console.warn('[InputBridge] Failed to spawn:', err.message);
+    return null;
+  }
+}
+
+function dispatchHostInput(event) {
+  if (!event || typeof event !== 'object') return false;
+  const bridge = getInputBridge();
+  if (!bridge || !bridge.stdin || bridge.stdin.destroyed) return false;
+  try {
+    bridge.stdin.write(JSON.stringify(event) + '\n');
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function getLocalIps() {
   const interfaces = os.networkInterfaces();
@@ -147,6 +192,64 @@ function handler(req, res) {
     });
     return;
   }
+  if (url.pathname === '/api/host/capabilities') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(JSON.stringify({
+      os: os.type(),
+      platform: os.platform(),
+      release: os.release(),
+      arch: os.arch(),
+      hostname: os.hostname(),
+      canControlInput: process.platform === 'win32',
+      inputBridgeAvailable: !!fs.existsSync(path.join(__dirname, 'scripts', 'input-bridge.ps1'))
+    }));
+  }
+  if (url.pathname === '/api/host/input' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const dispatched = dispatchHostInput(payload);
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: true, dispatched }));
+      } catch (err) {
+        res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+    });
+    return;
+  }
+  if (url.pathname === '/api/host/exec' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { cmd } = JSON.parse(body || '{}');
+        if (!cmd || typeof cmd !== 'string') {
+          res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: 'Missing command' }));
+        }
+        const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh';
+        try {
+          const stdout = execSync(cmd, { shell, timeout: 8000, encoding: 'utf8', maxBuffer: 512 * 1024 });
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ output: stdout, exitCode: 0 }));
+        } catch (execErr) {
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            output: execErr.stdout || '',
+            error: execErr.stderr || execErr.message,
+            exitCode: execErr.status || 1
+          }));
+        }
+      } catch (err) {
+        res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
 
   const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
   const file = path.resolve(root, relative);
@@ -229,6 +332,18 @@ function attachSignaling(server) {
       if (message.type === 'signal' && socket.room) {
         const room = rooms.get(socket.room);
         return send(socket.role === 'host' ? room?.viewer : room?.host, { type: 'signal', data: message.data });
+      }
+      if (message.type === 'remote-input' && socket.room) {
+        const room = rooms.get(socket.room);
+        if (room && socket.role === 'viewer') {
+          dispatchHostInput(message.data);
+          return send(room.host, { type: 'remote-input', data: message.data });
+        }
+      }
+      if (message.type === 'remote-control-state' && socket.room) {
+        const room = rooms.get(socket.room);
+        const target = socket.role === 'host' ? room?.viewer : room?.host;
+        return send(target, { type: 'remote-control-state', enabled: !!message.enabled });
       }
     });
     socket.on('close', () => {

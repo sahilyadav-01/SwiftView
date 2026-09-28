@@ -114,3 +114,22 @@ test('diagnoses stack traces with AI Copilot endpoint', async () => {
   assert.equal(data.errorType, 'NodeModuleNotFound');
   assert.match(data.suggestedCommand, /npm install express/);
 });
+
+test('reports host system capabilities via /api/host/capabilities', async () => {
+  const response = await fetch(`${baseUrl}/api/host/capabilities`);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.ok(data.os);
+  assert.ok(data.platform);
+});
+
+test('accepts remote input events via /api/host/input', async () => {
+  const response = await fetch(`${baseUrl}/api/host/input`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'mouse', action: 'move', x: 0.5, y: 0.5 })
+  });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+});

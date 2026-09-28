@@ -251,6 +251,7 @@
           <span class="telemetry-chip ready" id="transportChip" title="Transport multiplexing protocol">Transport: <b id="transportMode">QUIC/SCTP</b></span>
           <span class="telemetry-chip ready" id="dcChip" title="RTCDataChannel status">Channel: <b>Ready</b></span>
         </div>
+        <button id="remoteControlToggle" class="chip-toggle" title="Toggle Remote Mouse & Keyboard Control">🎮 Remote Control: <b id="remoteControlStatus">OFF</b></button>
         <button id="dirtyRectToggle" class="chip-toggle active" title="Toggle Dirty Rectangle Tile Diffing">▦ Dirty Rects: <b id="dirtyStatus">ON</b></button>
         <button id="broadcastScreenBtn" class="chip-toggle" title="Broadcast Screen Display" hidden>📺 Share Screen</button>
         <span id="sessionCode"></span>
@@ -261,10 +262,39 @@
 
     <!-- Stage Panels: Video, Terminal Shell, Diagnostics -->
     <div class="stage" id="sessionStage">
-      <!-- Video Stream Panel with Dirty Rectangle Diffing Canvas -->
+      <!-- Video Stream Panel with Remote Control & Dirty Rectangle Canvas -->
       <div class="stage-panel video-panel active" id="videoPanel">
         <video id="remoteVideo" autoplay playsinline muted></video>
         <canvas id="dirtyCanvas" class="dirty-overlay"></canvas>
+        
+        <!-- Remote Laser Cursor Pointer (displayed on Host & Viewer) -->
+        <div id="remoteCursor" class="remote-cursor" hidden>
+          <div class="cursor-pointer"></div>
+          <span class="cursor-badge" id="cursorLabel">Remote</span>
+        </div>
+
+        <!-- Remote Control Active Banner (Viewer Mode) -->
+        <div id="remoteControlBanner" class="remote-control-banner" hidden>
+          <span class="rc-pulse"></span>
+          <span>🎮 <strong>Remote Control Active</strong> — Click, drag & type directly onto remote PC</span>
+          <button type="button" id="exitRcBtn" class="rc-exit-btn">Turn Off (Esc)</button>
+        </div>
+
+        <!-- Mobile Touchpad & Virtual Keyboard Toolbar -->
+        <div id="mobileToolbar" class="mobile-toolbar">
+          <input type="text" id="mobileVirtualInput" class="mobile-virtual-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Virtual Keyboard Input">
+          <button type="button" id="mobileKbToggle" class="mob-btn" title="Toggle On-Screen Keyboard">⌨️ Keyb</button>
+          <button type="button" class="mob-btn mob-key" data-key="Esc">Esc</button>
+          <button type="button" class="mob-btn mob-key" data-key="Tab">Tab</button>
+          <button type="button" class="mob-btn mob-key" data-key="Win">⊞ Win</button>
+          <button type="button" class="mob-btn mob-key" data-key="Ctrl+C">Ctrl+C</button>
+          <button type="button" class="mob-btn mob-key" data-key="Ctrl+V">Ctrl+V</button>
+          <button type="button" class="mob-btn mob-key" data-key="Enter">↵ Enter</button>
+          <button type="button" class="mob-btn mob-key" data-key="Backspace">⌫</button>
+          <button type="button" id="mobileRightClickBtn" class="mob-btn" title="Send Right Click">🖱️ R-Click</button>
+          <button type="button" id="mobileTouchModeBtn" class="mob-btn mob-mode" title="Switch Touch Mode">Mode: <b>Direct</b></button>
+        </div>
+
         <div class="dirty-hud" id="dirtyHud">
           <span>▦ Tile Diffing Active:</span> <strong id="dirtySavedPct">95.4%</strong> bandwidth saved (<span id="dirtyTileCount">8</span> dirty rects)
         </div>
@@ -285,6 +315,7 @@
             <span class="term-badge">WebRTC DataChannel / QUIC Stream</span>
           </div>
           <div class="terminal-quick-actions">
+            <button type="button" id="hostOsShellToggle" class="quick-cmd shell-mode-btn" title="Toggle Live Host OS PowerShell execution">⚡ Host OS: <b id="hostOsShellStatus">Live</b></button>
             <button type="button" class="quick-cmd" data-cmd="sysinfo">sysinfo</button>
             <button type="button" class="quick-cmd" data-cmd="top">top</button>
             <button type="button" class="quick-cmd" data-cmd="ping">ping</button>
