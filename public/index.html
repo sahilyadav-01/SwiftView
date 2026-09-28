@@ -21,6 +21,7 @@
 
       <nav aria-label="Primary navigation">
         <button class="nav-item active" data-view="remote"><span class="icon">⌁</span> Remote access</button>
+        <button class="nav-item" data-view="fleet"><span class="icon">⊞</span> Admin Fleet <b id="fleetCount">0</b></button>
         <button class="nav-item" data-view="devices"><span class="icon">▣</span> My devices <b id="deviceCount">0</b></button>
         <button class="nav-item" data-view="activity"><span class="icon">↗</span> Activity</button>
       </nav>
@@ -39,9 +40,9 @@
     <main>
       <header>
         <div>
-          <p class="eyebrow">REMOTE ACCESS</p>
-          <h1>Good evening, Sahil.</h1>
-          <p class="subtitle">Connect to any device, from anywhere.</p>
+          <p class="eyebrow" id="mainEyebrow">REMOTE ACCESS</p>
+          <h1 id="mainTitle">Good evening, Sahil.</h1>
+          <p class="subtitle" id="mainSubtitle">Connect to any device, from anywhere.</p>
         </div>
         <div class="header-actions">
           <span class="status"><i></i> Network ready</span>
@@ -51,43 +52,85 @@
       </header>
       <div class="security-banner" id="securityBanner" hidden><strong>HTTPS required for hosting</strong><span>This address can view sessions, but browsers only allow screen sharing from HTTPS or localhost.</span></div>
 
-      <section class="connect-card">
-        <div class="connect-copy">
-          <span class="card-icon">↗</span>
-          <div><h2>Connect to a remote device</h2><p>Enter the 9-digit SwiftView ID of the device you want to access.</p></div>
-        </div>
-        <form id="connectForm">
-          <label for="remoteId">REMOTE DEVICE ID</label>
-          <div class="input-row">
-            <div class="id-input"><span>⌁</span><input id="remoteId" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="000 000 000" aria-describedby="idHint"></div>
-            <button class="connect-button" type="submit">Connect <span>→</span></button>
+      <!-- Regular Remote View -->
+      <div id="remoteView">
+        <section class="connect-card">
+          <div class="connect-copy">
+            <span class="card-icon">↗</span>
+            <div><h2>Connect to a remote device</h2><p>Enter the 9-digit SwiftView ID of the device you want to access.</p></div>
           </div>
-          <div class="form-meta"><small id="idHint">Ask the remote user for their SwiftView ID</small><button type="button" id="pasteButton">▣ Paste ID</button></div>
-        </form>
-      </section>
-
-      <section class="content-grid">
-        <div class="panel recent-panel">
-          <div class="panel-heading"><div><p class="eyebrow">HISTORY</p><h2>Recent connections</h2></div><button class="text-button" id="clearHistory">Clear history</button></div>
-          <div class="device-list" id="deviceList"></div>
-        </div>
-
-        <div class="right-column">
-          <div class="panel this-device">
-            <div class="panel-heading"><div><p class="eyebrow">THIS DEVICE</p><h2 id="availabilityTitle">Ready to share</h2></div><label class="switch" title="Enable screen sharing"><input id="availabilityToggle" type="checkbox" checked><span></span></label></div>
-            <div class="device-id-block">
-              <div><small>YOUR SWIFTVIEW ID</small><strong id="ownId">847 291 635</strong></div>
-              <button class="copy-button" id="copyOwnId" aria-label="Copy your SwiftView ID">▣</button>
+          <form id="connectForm">
+            <label for="remoteId">REMOTE DEVICE ID</label>
+            <div class="input-row">
+              <div class="id-input"><span>⌁</span><input id="remoteId" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="000 000 000" aria-describedby="idHint"></div>
+              <button class="connect-button" type="submit">Connect <span>→</span></button>
             </div>
-            <div class="device-details"><span id="deviceStatus"><i></i> Ready</span><span id="platformName">Web browser</span><span>v0.2.0</span></div>
-            <button class="share-button" id="shareScreen">Share this screen <span>↗</span></button>
+            <div class="form-meta"><small id="idHint">Ask the remote user for their SwiftView ID</small><button type="button" id="pasteButton">▣ Paste ID</button></div>
+          </form>
+        </section>
+
+        <section class="content-grid">
+          <div class="panel recent-panel">
+            <div class="panel-heading"><div><p class="eyebrow">HISTORY</p><h2>Recent connections</h2></div><button class="text-button" id="clearHistory">Clear history</button></div>
+            <div class="device-list" id="deviceList"></div>
           </div>
-          <div class="tip-card">
-            <span class="tip-icon">⌘</span>
-            <div><strong>Quick connect</strong><p>Press <kbd>Ctrl</kbd> + <kbd>K</kbd> anywhere to jump to the connection field.</p></div>
+
+          <div class="right-column">
+            <div class="panel this-device">
+              <div class="panel-heading"><div><p class="eyebrow">THIS DEVICE</p><h2 id="availabilityTitle">Ready to share</h2></div><label class="switch" title="Enable screen sharing"><input id="availabilityToggle" type="checkbox" checked><span></span></label></div>
+              <div class="device-id-block">
+                <div><small>YOUR SWIFTVIEW ID</small><strong id="ownId">847 291 635</strong></div>
+                <button class="copy-button" id="copyOwnId" aria-label="Copy your SwiftView ID">▣</button>
+              </div>
+              <div class="device-details"><span id="deviceStatus"><i></i> Ready</span><span id="platformName">Web browser</span><span>v0.2.0</span></div>
+              <button class="share-button" id="shareScreen">Share this screen <span>↗</span></button>
+            </div>
+            <div class="tip-card">
+              <span class="tip-icon">⌘</span>
+              <div><strong>Quick connect</strong><p>Press <kbd>Ctrl</kbd> + <kbd>K</kbd> anywhere to jump to the connection field.</p></div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
+
+      <!-- Admin Fleet View (Zero-Install Web Admin Dashboard) -->
+      <div id="fleetView" hidden>
+        <section class="fleet-overview">
+          <div class="fleet-stat-card">
+            <span class="stat-icon">⊞</span>
+            <div><small>ONLINE NODES</small><strong id="statOnlineNodes">0</strong></div>
+          </div>
+          <div class="fleet-stat-card">
+            <span class="stat-icon">⚡</span>
+            <div><small>SESSION GATEWAY</small><strong>Zero-Install Edge</strong></div>
+          </div>
+          <div class="fleet-stat-card">
+            <span class="stat-icon">⏱</span>
+            <div><small>AVG RTC LATENCY</small><strong id="statAvgLatency">&lt; 15 ms</strong></div>
+          </div>
+          <div class="fleet-stat-card">
+            <span class="stat-icon">⛊</span>
+            <div><small>ADMIN CAPABILITY</small><strong>Screen + Dev Shell</strong></div>
+          </div>
+        </section>
+
+        <section class="panel fleet-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">CLUSTER NODES</p>
+              <h2>Active Fleet Devices</h2>
+              <p>Direct zero-install WebRTC management. Open a remote shell or screen stream on any node.</p>
+            </div>
+            <div class="fleet-actions">
+              <button class="row-connect" id="refreshFleetButton">⟳ Refresh fleet</button>
+              <button class="row-connect" id="simulateNodeButton">+ Register Edge Node</button>
+            </div>
+          </div>
+          <div class="fleet-grid" id="fleetGrid">
+            <div class="empty">Scanning for online SwiftView nodes…</div>
+          </div>
+        </section>
+      </div>
 
       <footer><span><i></i> All systems operational</span><span>Secured with end-to-end encryption</span><span>SwiftView v0.2.0</span></footer>
     </main>
@@ -121,13 +164,115 @@
       <div id="drawerContent"></div>
     </aside>
   </div>
+  
+  <!-- Active Remote Session with Multi-Mode Switcher & Dev Shell -->
   <div class="session" id="session" hidden>
     <div class="session-topbar">
-      <div class="session-brand"><span class="brand-mark"><i></i><i></i></span><strong>SwiftView</strong></div>
-      <div class="session-state"><i></i><span id="sessionLabel">Live session</span></div>
-      <div class="session-actions"><span id="sessionCode"></span><button id="fullscreenButton" title="Fullscreen">⛶</button><button class="end-button" id="endSession">End session</button></div>
+      <div class="session-brand">
+        <span class="brand-mark"><i></i><i></i></span>
+        <strong>SwiftView</strong>
+        <span class="session-node-tag" id="sessionNodeTag">Node</span>
+      </div>
+
+      <!-- Mode Selector -->
+      <div class="session-modes" role="tablist">
+        <button class="mode-tab active" data-mode="screen" role="tab" aria-selected="true"><span>📺</span> Screen</button>
+        <button class="mode-tab" data-mode="shell" role="tab" aria-selected="false"><span>💻</span> Dev Shell</button>
+        <button class="mode-tab" data-mode="split" role="tab" aria-selected="false"><span>◫</span> Split View</button>
+        <button class="mode-tab" data-mode="diagnostics" role="tab" aria-selected="false"><span>📊</span> Diagnostics</button>
+      </div>
+
+      <div class="session-actions">
+        <div class="session-telemetry">
+          <span class="telemetry-chip" id="rttChip" title="Peer-to-peer latency over WebRTC">RTT: <b id="rttValue">--</b> ms</span>
+          <span class="telemetry-chip ready" id="dcChip" title="RTCDataChannel status">DataChannel: <b>Ready</b></span>
+        </div>
+        <span id="sessionCode"></span>
+        <button id="fullscreenButton" title="Fullscreen">⛶</button>
+        <button class="end-button" id="endSession">End session</button>
+      </div>
     </div>
-    <div class="stage"><video id="remoteVideo" autoplay playsinline></video><div class="waiting" id="waiting"><div class="radar"><span></span><span></span><i>↗</i></div><h2 id="waitingTitle">Ready to connect</h2><p id="waitingText">Share your SwiftView ID with the other device.</p></div></div>
+
+    <!-- Stage Panels: Video, Terminal Shell, Diagnostics -->
+    <div class="stage" id="sessionStage">
+      <!-- Video Stream Panel -->
+      <div class="stage-panel video-panel active" id="videoPanel">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <div class="waiting" id="waiting">
+          <div class="radar"><span></span><span></span><i>↗</i></div>
+          <h2 id="waitingTitle">Ready to connect</h2>
+          <p id="waitingText">Share your SwiftView ID with the other device.</p>
+        </div>
+      </div>
+
+      <!-- Remote Dev Shell / Terminal Panel (RTCDataChannel) -->
+      <div class="stage-panel terminal-panel" id="terminalPanel">
+        <div class="terminal-bar">
+          <div class="terminal-bar-info">
+            <span class="term-dot"></span>
+            <strong id="terminalHostPrompt">admin@swiftview-node:~$</strong>
+            <span class="term-badge">WebRTC P2P DataChannel</span>
+          </div>
+          <div class="terminal-quick-actions">
+            <button type="button" class="quick-cmd" data-cmd="sysinfo">sysinfo</button>
+            <button type="button" class="quick-cmd" data-cmd="top">top</button>
+            <button type="button" class="quick-cmd" data-cmd="ping">ping</button>
+            <button type="button" class="quick-cmd" data-cmd="logs">logs</button>
+            <button type="button" class="quick-cmd" data-cmd="speedtest">speedtest</button>
+            <button type="button" class="quick-cmd clear-cmd" data-cmd="clear">clear</button>
+          </div>
+        </div>
+
+        <div class="terminal-screen" id="terminalScreen" role="log" aria-live="polite">
+          <div class="term-line welcome-line">SwiftView Web Admin Shell v0.2.0 [E2EE WebRTC DataChannel]</div>
+          <div class="term-line welcome-line">Type <span class="term-hl">help</span> to list available commands or click quick actions above.</div>
+          <div class="term-output" id="terminalOutput"></div>
+        </div>
+
+        <form class="terminal-input-bar" id="terminalForm">
+          <span class="term-prompt-symbol">admin@node:~$</span>
+          <input class="terminal-input" id="terminalInput" autocomplete="off" spellcheck="false" placeholder="Enter shell command (e.g. 'sysinfo', 'top', 'uptime', 'eval 2+2')...">
+          <button class="terminal-run-button" type="submit">Execute <span>↵</span></button>
+        </form>
+      </div>
+
+      <!-- Real-time Diagnostics Panel -->
+      <div class="stage-panel diagnostics-panel" id="diagnosticsPanel">
+        <div class="diagnostics-grid">
+          <div class="diag-card">
+            <div class="diag-card-header"><span class="diag-icon">⚡</span><h3>Network & DataChannel</h3></div>
+            <div class="diag-row"><span>Round Trip Latency (RTT)</span><strong id="diagRtt">-- ms</strong></div>
+            <div class="diag-row"><span>Channel State</span><strong id="diagChannelState">Connecting</strong></div>
+            <div class="diag-row"><span>Transport Protocol</span><strong>WebRTC SCTP / ICE</strong></div>
+            <div class="diag-row"><span>Buffered Amount</span><strong id="diagBuffer">0 bytes</strong></div>
+          </div>
+
+          <div class="diag-card">
+            <div class="diag-card-header"><span class="diag-icon">▣</span><h3>Target Node Profile</h3></div>
+            <div class="diag-row"><span>Host Device</span><strong id="diagPlatform">--</strong></div>
+            <div class="diag-row"><span>Remote User Agent</span><strong id="diagUa" class="truncate-text">--</strong></div>
+            <div class="diag-row"><span>Screen Dimensions</span><strong id="diagResolution">--</strong></div>
+            <div class="diag-row"><span>Session Uptime</span><strong id="diagUptime">0s</strong></div>
+          </div>
+
+          <div class="diag-card">
+            <div class="diag-card-header"><span class="diag-icon">⏱</span><h3>Stream Performance</h3></div>
+            <div class="diag-row"><span>Framerate Goal</span><strong>30 - 60 FPS</strong></div>
+            <div class="diag-row"><span>Video Codec</span><strong>VP8 / H.264 (Auto)</strong></div>
+            <div class="diag-row"><span>Audio Channel</span><strong>Opus Stereo</strong></div>
+            <div class="diag-row"><span>Packet Loss Estimation</span><strong id="diagPacketLoss">0.0%</strong></div>
+          </div>
+
+          <div class="diag-card">
+            <div class="diag-card-header"><span class="diag-icon">⛊</span><h3>Security & Compliance</h3></div>
+            <div class="diag-row"><span>Encryption</span><strong>DTLS-SRTP 256-bit</strong></div>
+            <div class="diag-row"><span>Admin Access Mode</span><strong>Interactive Shell + Video</strong></div>
+            <div class="diag-row"><span>Session Type</span><strong>Peer-to-Peer Zero Install</strong></div>
+            <div class="diag-row"><span>Audit Status</span><strong>Logged Locally & Session DB</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
   <script src="/app.js"></script>
 </body>

@@ -18,13 +18,17 @@ node --test
 
 ## Included
 
-- Responsive dark/light desktop dashboard
+- Responsive dark/light desktop dashboard with Zero-Install Web Admin Fleet view
+- Real-time Remote Dev Shell over WebRTC `RTCDataChannel` (`swift-channel`)
+- Interactive in-session mode switcher: Fullscreen Video, Dev Shell, Split View (Video + Terminal), and System Diagnostics
+- Built-in host command interpreter (`sysinfo`, `top`/`ps`, `ping`, `uptime`, `logs`, `speedtest`, `eval`, `date`, `echo`) with command buffering
+- Multi-node Fleet Manager with live discovery (`/api/fleet`), latency telemetry (RTT), and node registration
 - Validated 9-digit device IDs with clipboard support
 - Recent device history persisted in local storage
 - Real screen capture, WebSocket signaling, and WebRTC video/audio
 - Fullscreen remote viewing with disconnect handling
 - Online/availability state and keyboard shortcut (`Ctrl+K`)
-- Zero production dependencies and a health endpoint
+- Zero production dependencies and `/api/health` + `/api/fleet` endpoints
 
 ## Architecture path
 

@@ -12,6 +12,8 @@ const types = {
   '.svg': 'image/svg+xml'
 };
 
+const rooms = new Map();
+
 function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   if (url.pathname === '/api/health') {
@@ -25,6 +27,20 @@ function handler(req, res) {
     }
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
     return res.end(JSON.stringify({ iceServers, turnConfigured: iceServers.length > 1 }));
+  }
+  if (url.pathname === '/api/fleet') {
+    const devices = [];
+    for (const [code, room] of rooms.entries()) {
+      if (room.host && room.host.readyState === 1) {
+        devices.push({
+          id: code,
+          busy: !!(room.viewer && room.viewer.readyState === 1),
+          registeredAt: room.registeredAt || Date.now()
+        });
+      }
+    }
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(JSON.stringify({ count: devices.length, devices }));
   }
 
   const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -48,18 +64,26 @@ function handler(req, res) {
 
 function attachSignaling(server) {
   const wss = new WebSocketServer({ server, path: '/signal', maxPayload: 64 * 1024 });
-  const rooms = new Map();
   const send = (socket, payload) => socket && socket.readyState === 1 && socket.send(JSON.stringify(payload));
 
   wss.on('connection', (socket) => {
     socket.on('message', (raw) => {
       let message;
       try { message = JSON.parse(raw.toString()); } catch { return send(socket, { type: 'error', message: 'Invalid message' }); }
+      if (message.type === 'fleet') {
+        const devices = [];
+        for (const [code, room] of rooms.entries()) {
+          if (room.host && room.host.readyState === 1) {
+            devices.push({ id: code, busy: !!(room.viewer && room.viewer.readyState === 1) });
+          }
+        }
+        return send(socket, { type: 'fleet', devices });
+      }
       if (message.type === 'host' && /^\d{9}$/.test(message.code)) {
         const existing = rooms.get(message.code);
         if (existing?.host?.readyState === socket.OPEN) return send(socket, { type: 'error', message: 'Device ID is already online' });
         socket.room = message.code; socket.role = 'host';
-        rooms.set(message.code, { host: socket, viewer: null });
+        rooms.set(message.code, { host: socket, viewer: null, registeredAt: Date.now() });
         return send(socket, { type: 'registered' });
       }
       if (message.type === 'join' && /^\d{9}$/.test(message.code)) {

@@ -79,3 +79,18 @@ test('lets a host reject an incoming viewer', async () => {
   assert.match((await rejected).message, /declined/i);
   host.close(); viewer.close();
 });
+
+test('tracks fleet nodes and reports via /api/fleet', async () => {
+  const wsUrl = baseUrl.replace('http', 'ws') + '/signal';
+  const host = new WebSocket(wsUrl);
+  await new Promise((resolve) => host.once('open', resolve));
+  host.send(JSON.stringify({ type: 'host', code: '555666777' }));
+  await new Promise((resolve) => host.once('message', resolve));
+
+  const response = await fetch(`${baseUrl}/api/fleet`);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.ok(data.devices.some((d) => d.id === '555666777'));
+
+  host.close();
+});
