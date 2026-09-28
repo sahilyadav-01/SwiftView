@@ -961,6 +961,8 @@ function endSession(message) {
   $('#waitingTitle').textContent = 'Ready to connect';
   $('#waitingText').textContent = 'Share your SwiftView ID with the other device.';
   $('#broadcastScreenBtn').hidden = true;
+  const switchBtn = $('#waitingToShellBtn');
+  if (switchBtn) switchBtn.style.display = 'none';
   $('#shareScreen').firstChild.textContent = 'Share this screen ';
   $('#dcChip').classList.remove('ready');
   $('#dcChip').innerHTML = 'DataChannel: <b>Ready</b>';
@@ -1189,6 +1191,10 @@ $('#broadcastScreenBtn')?.addEventListener('click', async () => {
       if (err.name !== 'NotAllowedError') showToast('Could not capture screen');
     }
   }
+});
+
+$('#waitingToShellBtn')?.addEventListener('click', () => {
+  setSessionMode('shell');
 });
 
 // Security Guide Modal Listeners
