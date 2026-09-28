@@ -4,7 +4,7 @@ A native desktop host for **SwiftView**, written in Rust by **Sahil Yadav**.
 
 ## Current implementation status
 
-The native host foundation is operational: it keeps a stable nine-digit device ID, connects to the SwiftView WebSocket signaling service, registers as an available host, reconnects with exponential backoff, and locally approves or rejects viewer requests. The DXGI capture, hardware encoder, WebRTC media transport, native input, clipboard, and file-transfer modules are the next implementation milestones; their current source files are scaffolding and are not yet production implementations.
+The native host foundation is operational: it keeps a stable nine-digit device ID, connects to the SwiftView WebSocket signaling service, registers as an available host, reconnects with exponential backoff, and locally approves or rejects viewer requests. The DXGI capture, hardware encoder, WebRTC media transport, native input, clipboard, and file-transfer modules are the next roadmap milestones.
 
 ---
 

@@ -1,8 +1,5 @@
 //! SwiftView native Windows host.
 
-mod adaptive;
-mod capture;
-mod encoder;
 mod signaling;
 
 use anyhow::{bail, Context, Result};
