@@ -2,6 +2,8 @@
 
 A working browser-based remote desktop viewing MVP. A host shares a screen, sends its nine-digit ID to a viewer, and SwiftView negotiates an encrypted peer-to-peer WebRTC media channel through the included signaling server.
 
+> **Prototype status:** this repository is not yet a production remote-administration control plane. The production target, authorization model, database, API contracts, native-client structure, deployment foundation, security gates, and 26-phase roadmap are documented in [docs/README.md](docs/README.md).
+
 **Author:** Sahil Yadav
 
 ## Run locally
