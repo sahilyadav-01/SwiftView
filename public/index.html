@@ -53,9 +53,12 @@
       <div class="security-banner" id="securityBanner" hidden>
         <div class="banner-text">
           <strong>🔒 Local Network Notice (HTTP):</strong>
-          <span>Dev Shell & remote control are active. To enable screen video sharing across LAN devices, HTTPS or Chrome local IP flag is needed.</span>
+          <span>Dev Shell & remote control are active. To enable screen video sharing across LAN devices, switch to HTTPS.</span>
         </div>
-        <button type="button" class="banner-action-btn" id="openSecGuideBtn">Screen Sharing Setup ↗</button>
+        <div class="banner-actions" style="display:flex;gap:6px;">
+          <button type="button" class="banner-action-btn" id="switchToHttpsBtn" style="background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700;">🔒 Switch to HTTPS ↗</button>
+          <button type="button" class="banner-action-btn" id="openSecGuideBtn">Setup Guide</button>
+        </div>
       </div>
 
       <!-- Regular Remote View -->

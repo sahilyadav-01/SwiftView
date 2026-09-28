@@ -14,6 +14,7 @@ let simulatedFleet = JSON.parse(localStorage.getItem('swiftview-sim-fleet') || '
 ];
 
 let socket, peer, localStream, role, connectionTimeout;
+let pendingCandidates = [];
 let dataChannel = null;
 let sessionStartedAt = null;
 let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -821,14 +822,22 @@ function createPeer() {
     sendSignal({ candidate, isUdp });
   };
 
-  peer.ontrack = ({ streams, receiver }) => {
-    $('#remoteVideo').srcObject = streams[0];
+  peer.ontrack = (event) => {
+    const video = $('#remoteVideo');
+    const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+    video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+    video.play().catch((e) => console.warn('Autoplay prevented:', e));
+
     $('#waiting').hidden = true;
     $('#sessionNodeTag').textContent = `UDP P2P Live`;
-    // Initialize adaptive jitter buffer target (minimal default for low-latency desktop control)
-    if (receiver && 'jitterBufferTarget' in receiver) {
-      try { receiver.jitterBufferTarget = 15; } catch (_) {}
+    if (event.receiver && 'jitterBufferTarget' in event.receiver) {
+      try { event.receiver.jitterBufferTarget = 15; } catch (_) {}
     }
+    setSessionMode('screen');
+    showToast('Screen stream active');
+    logHostEvent('Received remote video track - display rendering active');
   };
 
   // Host creates data channel, viewer listens to ondatachannel
@@ -901,6 +910,7 @@ async function onSignalMessage(event) {
     await pc.setLocalDescription(offer);
     sendSignal({ description: pc.localDescription });
     logHostEvent(`Offer generated (${localStream ? 'Screen track + DataChannel' : 'Dev Shell DataChannel'})`);
+    showSession(localStream ? 'Sharing your screen' : 'Dev Shell Active');
   }
   if (message.type === 'waiting') { $('#connectionStatus').textContent = message.message; $('#progressBar').style.width = '58%'; }
   if (message.type === 'joined') { $('#connectionStatus').textContent = 'Approved. Securing channels…'; $('#progressBar').style.width = '82%'; }
@@ -910,14 +920,25 @@ async function onSignalMessage(event) {
       if (description) {
         if (!peer) createPeer();
         await peer.setRemoteDescription(description);
+        // Flush any candidates buffered before remoteDescription was set
+        while (pendingCandidates.length > 0) {
+          const c = pendingCandidates.shift();
+          await peer.addIceCandidate(c).catch(() => {});
+        }
         if (description.type === 'offer') {
           const answer = await peer.createAnswer();
           await peer.setLocalDescription(answer);
           sendSignal({ description: peer.localDescription });
         }
-      } else if (candidate && peer) await peer.addIceCandidate(candidate);
+      } else if (candidate) {
+        if (!peer || !peer.remoteDescription) {
+          pendingCandidates.push(candidate);
+        } else {
+          await peer.addIceCandidate(candidate).catch(() => {});
+        }
+      }
     } catch (err) {
-      endSession('Secure connection negotiation failed');
+      console.warn('Signaling message handling warning:', err);
     }
   }
   if (message.type === 'peer-left') endSession(message.message);
@@ -1112,7 +1133,29 @@ $('#drawerContent').addEventListener('click', (event) => {
   const button = event.target.closest('[data-drawer-connect]');
   if (button) { $('#drawer').hidden = true; connect(button.dataset.drawerConnect, 'screen'); }
 });
-$('#acceptViewer').addEventListener('click', () => { $('#incomingModal').hidden = true; socket?.send(JSON.stringify({ type: 'approve' })); showToast('Viewer approved'); });
+$('#acceptViewer').addEventListener('click', async () => {
+  $('#incomingModal').hidden = true;
+  if (!localStream && window.isSecureContext && navigator.mediaDevices?.getDisplayMedia) {
+    try {
+      localStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 60 } },
+        audio: false
+      });
+      $('#remoteVideo').srcObject = localStream;
+      localStream.getVideoTracks()[0].addEventListener('ended', () => {
+        localStream = null;
+        $('#broadcastScreenBtn').textContent = '📺 Share Screen';
+        $('#broadcastScreenBtn').classList.remove('active');
+        showToast('Screen sharing stopped');
+      });
+    } catch (e) {
+      console.warn('Screen selection skipped by host:', e);
+      showToast('Screen capture skipped. Connecting in Dev Shell mode.');
+    }
+  }
+  socket?.send(JSON.stringify({ type: 'approve' }));
+  showToast('Viewer approved');
+});
 $('#rejectViewer').addEventListener('click', () => { $('#incomingModal').hidden = true; socket?.send(JSON.stringify({ type: 'reject' })); showToast('Connection declined'); });
 $('#platformName').textContent = navigator.userAgentData?.platform || navigator.platform || 'Web browser';
 $('#availabilityToggle').addEventListener('change', (event) => {
@@ -1198,6 +1241,9 @@ $('#waitingToShellBtn')?.addEventListener('click', () => {
 });
 
 // Security Guide Modal Listeners
+$('#switchToHttpsBtn')?.addEventListener('click', () => {
+  location.href = location.href.replace(/^http:/, 'https:');
+});
 $('#openSecGuideBtn')?.addEventListener('click', () => {
   $('#guideLanUrl').textContent = `${location.protocol}//${location.host}`;
   $('#secGuideModal').hidden = false;
