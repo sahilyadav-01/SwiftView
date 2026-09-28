@@ -12,6 +12,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "ws": "^8.21.3"
   }
 }
